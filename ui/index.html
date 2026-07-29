@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StreamCap RS - 直播录播</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1 class="logo">🎬 StreamCap RS</h1>
+                <span class="version">v0.1.0</span>
+            </div>
+            <nav class="sidebar-nav">
+                <button class="nav-btn active" data-page="home">
+                    <span class="nav-icon">📋</span> 录制列表
+                </button>
+                <button class="nav-btn" data-page="add">
+                    <span class="nav-icon">➕</span> 添加任务
+                </button>
+                <button class="nav-btn" data-page="settings">
+                    <span class="nav-icon">⚙️</span> 设置
+                </button>
+            </nav>
+            <div class="sidebar-footer" id="ffmpeg-status">
+                检查 FFmpeg...
+            </div>
+        </aside>
+
+        <!-- 主内容 -->
+        <main class="main-content">
+            <!-- 录制列表页 -->
+            <section id="page-home" class="page active">
+                <div class="page-header">
+                    <h2>录制列表</h2>
+                    <div class="header-actions">
+                        <button class="btn btn-primary" id="btn-add">➕ 添加任务</button>
+                    </div>
+                </div>
+                <div id="recording-list" class="recording-grid">
+                    <div class="empty-state">
+                        <div class="empty-icon">📭</div>
+                        <p>暂无录制任务</p>
+                        <p class="empty-hint">点击右上角「添加任务」开始监控直播</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 添加任务页 -->
+            <section id="page-add" class="page">
+                <div class="page-header">
+                    <h2>添加录制任务</h2>
+                </div>
+                <div class="form-container">
+                    <div class="form-group">
+                        <label for="input-url">直播间 URL</label>
+                        <input type="text" id="input-url" placeholder="例如: https://live.bilibili.com/12345" />
+                        <span class="form-hint" id="platform-hint"></span>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="input-quality">视频质量</label>
+                            <select id="input-quality">
+                                <option value="OD">原画 (OD)</option>
+                                <option value="UHD">超清 (UHD)</option>
+                                <option value="HD">高清 (HD)</option>
+                                <option value="SD">标清 (SD)</option>
+                                <option value="LD">低清 (LD)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="input-format">输出格式</label>
+                            <select id="input-format">
+                                <option value="ts">TS (推荐)</option>
+                                <option value="mp4">MP4</option>
+                                <option value="mkv">MKV</option>
+                                <option value="flv">FLV</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="input-monitor" checked />
+                            添加后立即开始监控
+                        </label>
+                    </div>
+                    <button class="btn btn-primary btn-block" id="btn-submit">确认添加</button>
+                </div>
+            </section>
+
+            <!-- 设置页 -->
+            <section id="page-settings" class="page">
+                <div class="page-header">
+                    <h2>设置</h2>
+                </div>
+                <div class="form-container">
+                    <div class="form-group">
+                        <label for="setting-output-dir">输出目录</label>
+                        <input type="text" id="setting-output-dir" placeholder="录制文件保存路径" />
+                    </div>
+                    <div class="form-group">
+                        <label for="setting-loop-interval">检测间隔(秒)</label>
+                        <input type="number" id="setting-loop-interval" min="30" max="3600" />
+                        <span class="form-hint">建议 120-300 秒，过于频繁可能导致 IP 被封</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="setting-space-threshold">磁盘空间阈值(GB)</label>
+                        <input type="number" id="setting-space-threshold" min="0" />
+                        <span class="form-hint">低于此值自动停止录制，0表示不限制</span>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="setting-folder-platform" />
+                            按平台创建子文件夹
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="setting-folder-anchor" />
+                            按主播创建子文件夹
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="setting-folder-date" checked />
+                            按日期创建子文件夹
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="setting-folder-title" />
+                            按标题创建子文件夹
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="setting-enable-proxy" />
+                            启用代理
+                        </label>
+                        <input type="text" id="setting-proxy-url" placeholder="http://127.0.0.1:7890" class="conditional-input" />
+                    </div>
+                    <button class="btn btn-primary btn-block" id="btn-save-settings">保存设置</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
