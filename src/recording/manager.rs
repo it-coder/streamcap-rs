@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch, Mutex};
 use tokio::task::JoinHandle;
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// 活跃录制任务跟踪
 struct ActiveRecording {
@@ -53,10 +53,7 @@ impl RecordingManager {
     /// 录制启动
     /// ========================================
 
-    pub async fn start_recording(
-        self: &Arc<Self>,
-        recording_id: &str,
-    ) -> Result<(), String> {
+    pub async fn start_recording(self: &Arc<Self>, recording_id: &str) -> Result<(), String> {
         // 读取配置
         let config = {
             let recordings = self.app_state.recordings.read();
@@ -70,16 +67,14 @@ impl RecordingManager {
         // 在独立作用域中读取 settings，确保守卫在 .await 前完全释放
         let (proxy, quality) = {
             let settings = self.app_state.settings.read();
-            (
-                settings.proxy_url.clone(),
-                config.quality.clone(),
-            )
+            (settings.proxy_url.clone(), config.quality.clone())
         };
 
         info!("开始检测直播: {}", config.url);
 
         // 解析流URL
-        let stream_info = resolver::resolve_stream(&config.url, &quality, proxy.as_deref(), None).await?;
+        let stream_info =
+            resolver::resolve_stream(&config.url, &quality, proxy.as_deref(), None).await?;
 
         info!(
             "获取流成功: {} [{}] | {}",
@@ -104,7 +99,11 @@ impl RecordingManager {
 
         let updated_config = {
             let recordings = self.app_state.recordings.read();
-            recordings.iter().find(|r| r.id == recording_id).cloned().unwrap()
+            recordings
+                .iter()
+                .find(|r| r.id == recording_id)
+                .cloned()
+                .unwrap()
         };
         self.broadcast(updated_config);
 
@@ -213,6 +212,7 @@ impl RecordingManager {
         *poll_handle = Some(tokio::spawn(async move {
             info!("直播检测轮询已启动");
             loop {
+                info!("直播检测轮询: {:?}", chrono::Local::now());
                 let interval = {
                     let settings = this.app_state.settings.read();
                     settings.loop_interval_seconds
@@ -230,22 +230,17 @@ impl RecordingManager {
                     // 在独立作用域中读取 settings，确保守卫在 .await 前完全释放
                     let (proxy, quality) = {
                         let settings = this.app_state.settings.read();
-                        (
-                            settings.proxy_url.clone(),
-                            recording.quality.clone(),
-                        )
+                        (settings.proxy_url.clone(), recording.quality.clone())
                     };
 
-                    match resolver::resolve_stream(
-                        &recording.url,
-                        &quality,
-                        proxy.as_deref(),
-                        None,
-                    )
-                    .await
+                    match resolver::resolve_stream(&recording.url, &quality, proxy.as_deref(), None)
+                        .await
                     {
                         Ok(stream_info) => {
-                            info!("检测到开播: {} [{}]", stream_info.anchor_name, stream_info.platform);
+                            info!(
+                                "检测到开播: {} [{}]",
+                                stream_info.anchor_name, stream_info.platform
+                            );
 
                             // 更新信息
                             {
@@ -316,8 +311,16 @@ impl RecordingManager {
     }
 
     fn build_filename(_config: &RecordingConfig, info: &StreamInfo) -> String {
-        let anchor = if info.anchor_name.is_empty() { "unknown" } else { &info.anchor_name };
-        let title = if info.title.is_empty() { "live".to_string() } else { sanitize(&info.title) };
+        let anchor = if info.anchor_name.is_empty() {
+            "unknown"
+        } else {
+            &info.anchor_name
+        };
+        let title = if info.title.is_empty() {
+            "live".to_string()
+        } else {
+            sanitize(&info.title)
+        };
         let time = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S");
         format!("{}_{}_{}", anchor, title, time)
     }
