@@ -84,6 +84,7 @@ function renderRecordingList() {
   container.innerHTML = recordings.map(r => {
     const status = getStatus(r);
     const statusClass = getStatusClass(status);
+    const qualityLabel = r.quality?.label || r.quality || '原画';
     return `
       <div class="recording-card" id="card-${r.id}">
         <div class="card-header">
@@ -93,21 +94,21 @@ function renderRecordingList() {
         <div class="card-anchor">${r.anchor_name || r.url}</div>
         <div class="card-title">${r.title || '等待检测...'}</div>
         <div class="card-meta">
-          <span>📹 ${r.quality ? r.quality.label ? r.quality : '原画' : '原画'}</span>
+          <span>📹 ${qualityLabel}</span>
           <span>${r.monitor_enabled ? '🔔 监控中' : '⏸️ 已暂停'}</span>
         </div>
         <div class="card-actions">
           ${r.monitor_enabled
-            ? `<button class="btn btn-sm btn-outline" onclick="toggleMonitor('${r.id}', false)">⏸️ 暂停监控</button>`
-            : `<button class="btn btn-sm btn-success" onclick="toggleMonitor('${r.id}', true)">▶️ 开始监控</button>`
+            ? `<button class="btn btn-sm btn-outline" data-action="monitor-off" data-id="${r.id}">⏸️ 暂停监控</button>`
+            : `<button class="btn btn-sm btn-success" data-action="monitor-on" data-id="${r.id}">▶️ 开始监控</button>`
           }
           ${!r.is_recording && r.is_live
-            ? `<button class="btn btn-sm btn-primary" onclick="startRecord('${r.id}')">🔴 开始录制</button>`
+            ? `<button class="btn btn-sm btn-primary" data-action="record-start" data-id="${r.id}">🔴 开始录制</button>`
             : r.is_recording
-              ? `<button class="btn btn-sm btn-danger" onclick="stopRecord('${r.id}')">⏹️ 停止录制</button>`
+              ? `<button class="btn btn-sm btn-danger" data-action="record-stop" data-id="${r.id}">⏹️ 停止录制</button>`
               : ''
           }
-          <button class="btn btn-sm btn-outline" onclick="deleteRecording('${r.id}')">🗑️ 删除</button>
+          <button class="btn btn-sm btn-outline" data-action="delete" data-id="${r.id}">🗑️ 删除</button>
         </div>
       </div>
     `;
@@ -145,6 +146,33 @@ function statusLabel(status) {
   };
   return map[status] || status;
 }
+
+// 事件委托：录制列表所有按钮统一处理
+document.getElementById('recording-list')?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-action]');
+  if (!btn) return;
+
+  const action = btn.dataset.action;
+  const id = btn.dataset.id;
+
+  switch (action) {
+    case 'monitor-on':
+      await toggleMonitor(id, true);
+      break;
+    case 'monitor-off':
+      await toggleMonitor(id, false);
+      break;
+    case 'record-start':
+      await startRecord(id);
+      break;
+    case 'record-stop':
+      await stopRecord(id);
+      break;
+    case 'delete':
+      await deleteRecording(id);
+      break;
+  }
+});
 
 // 录制操作
 async function toggleMonitor(id, enabled) {
