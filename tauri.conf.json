@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.streamcap-rs.app",
   "build": {
-    "frontendDist": "./ui",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "frontendDist": "../frontend/dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "cd ../frontend && npm run dev",
+    "beforeBuildCommand": "cd ../frontend && npm run build"
   },
   "app": {
     "withGlobalTauri": true,
@@ -22,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:*; img-src 'self' data:"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:* ws://localhost:*; img-src 'self' data:"
     }
   },
   "bundle": {

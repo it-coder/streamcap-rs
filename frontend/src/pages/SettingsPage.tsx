@@ -1,0 +1,116 @@
+// 设置页 — 输出目录、检测间隔、磁盘阈值、文件夹规则、代理
+
+import { useEffect } from "react";
+import {
+  Form,
+  Input,
+  InputNumber,
+  Switch,
+  Button,
+  Card,
+  message,
+  Spin,
+} from "antd";
+import type { AppSettings } from "../types";
+
+interface Props {
+  settings: AppSettings | null;
+  loading: boolean;
+  onSave: (settings: AppSettings) => Promise<void>;
+}
+
+export function SettingsPage({ settings, loading, onSave }: Props) {
+  const [form] = Form.useForm<AppSettings>();
+
+  useEffect(() => {
+    if (settings) {
+      form.setFieldsValue(settings);
+    }
+  }, [settings, form]);
+
+  const handleSubmit = async (values: AppSettings) => {
+    try {
+      await onSave(values);
+      message.success("设置已保存");
+    } catch (e) {
+      message.error(`保存失败: ${e}`);
+    }
+  };
+
+  if (loading || !settings) {
+    return (
+      <div style={{ textAlign: "center", padding: 60 }}>
+        <Spin />
+      </div>
+    );
+  }
+
+  return (
+    <Card style={{ maxWidth: 600 }}>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSubmit}
+        initialValues={settings}
+      >
+        <Form.Item
+          label="输出目录"
+          name="output_dir"
+          tooltip="录制文件保存的根目录"
+        >
+          <Input placeholder="录制文件保存路径" />
+        </Form.Item>
+
+        <Form.Item
+          label="检测间隔（秒）"
+          name="loop_interval_seconds"
+          tooltip="建议 120-300 秒，过于频繁可能导致 IP 被封"
+        >
+          <InputNumber min={30} max={3600} style={{ width: "100%" }} />
+        </Form.Item>
+
+        <Form.Item
+          label="磁盘空间阈值（GB）"
+          name="recording_space_threshold_gb"
+          tooltip="低于此值自动停止录制，0 表示不限制"
+        >
+          <InputNumber min={0} style={{ width: "100%" }} />
+        </Form.Item>
+
+        <Card type="inner" title="目录结构" style={{ marginBottom: 16 }}>
+          <Form.Item label="按平台创建子文件夹" name="folder_by_platform" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item label="按主播创建子文件夹" name="folder_by_anchor" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item label="按日期创建子文件夹" name="folder_by_date" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item label="按标题创建子文件夹" name="folder_by_title" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+        </Card>
+
+        <Card type="inner" title="代理设置" style={{ marginBottom: 16 }}>
+          <Form.Item label="启用代理" name="enable_proxy" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item label="代理地址" name="proxy_url">
+            <Input placeholder="http://127.0.0.1:7890" />
+          </Form.Item>
+        </Card>
+
+        <Form.Item label="默认视频质量" name="default_quality">
+          <Input placeholder="OD" disabled />
+        </Form.Item>
+
+        <Form.Item>
+          <Button type="primary" htmlType="submit" block>
+            保存设置
+          </Button>
+        </Form.Item>
+      </Form>
+    </Card>
+  );
+}
