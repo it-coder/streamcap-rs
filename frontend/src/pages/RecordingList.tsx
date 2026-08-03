@@ -46,7 +46,7 @@ export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
   return (
     <Row gutter={[16, 16]}>
       {recordings.map((r: RecordingConfig) => (
-        <Col key={r.id} xs={24} sm={12} md={12} lg={8} xl={6}>
+        <Col key={r.id} xs={24} sm={12} md={12} lg={8} xl={8}>
           <RecordingCard
             recording={r}
             onToggleMonitor={toggleMonitor}

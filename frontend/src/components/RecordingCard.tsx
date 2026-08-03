@@ -71,7 +71,7 @@ export function RecordingCard({
 
   return (
     <Card
-      size="small"
+      size="medium"
       hoverable
       style={{ height: "100%" }}
       title={
