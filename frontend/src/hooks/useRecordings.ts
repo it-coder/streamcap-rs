@@ -27,7 +27,20 @@ export function useRecordings() {
   const refresh = useCallback(async () => {
     try {
       const list = await api.listRecordings();
-      setRecordings(list);
+      // merge 而非直接覆盖：
+      // 如果本地已有该 id 且 updated_at 更新（来自 listen 事件的较新数据），保留本地的
+      // 防止 refresh() 返回的列表覆盖掉 listen 刚收到的状态更新
+      setRecordings((prev) => {
+        if (prev.length === 0) return list;
+        return list.map((item) => {
+          const existing = prev.find((p) => p.id === item.id);
+          if (!existing) return item;
+          const prevTs = new Date(existing.updated_at).getTime();
+          const newTs = new Date(item.updated_at).getTime();
+          // 本地数据更新（来自事件推送），保留本地的
+          return prevTs > newTs ? existing : item;
+        });
+      });
     } catch (e) {
       console.error("加载录制列表失败:", e);
     } finally {
@@ -36,26 +49,31 @@ export function useRecordings() {
   }, []);
 
   useEffect(() => {
-    refresh();
-
-    // 订阅后端状态变更事件
-    // 后端在 RecordingManager.broadcast() 中 emit("recording_status", config)
     let unlisten: UnlistenFn | undefined;
     let cancelled = false;
 
+    // 先注册事件监听，确保不会漏掉 refresh 期间后端推送的状态变更
+    // 注册完成后再加载数据，避免竞态条件
     listen<RecordingConfig>("recording_status", (event) => {
       if (cancelled) return;
       const updated = event.payload;
       setRecordings((prev) =>
         prev.map((r) => (r.id === updated.id ? updated : r))
       );
-    }).then((fn) => {
-      if (cancelled) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
+    })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+          // listen 注册成功后再加载数据
+          refresh();
+        }
+      })
+      .catch(() => {
+        // listen 注册失败，仍然加载数据
+        refresh();
+      });
 
     return () => {
       cancelled = true;

@@ -294,10 +294,15 @@ impl RecordingManager {
                                 }
                             }
 
-                            // 启动录制（start_recording 内部会再次 broadcast）
-                            if let Err(e) = this.start_recording(&recording.id).await {
-                                error!("启动录制失败: {}", e);
-                            }
+                            // 并行启动录制，不阻塞后续直播间的检测
+                            // start_recording 内部会再次 emit 事件
+                            let this_clone = this.clone();
+                            let rid = recording.id.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) = this_clone.start_recording(&rid).await {
+                                    error!("启动录制失败: {}", e);
+                                }
+                            });
                         }
                         Err(_) => {
                             info!("未开播......{}", &recording.url);
