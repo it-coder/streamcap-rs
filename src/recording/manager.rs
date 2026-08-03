@@ -210,9 +210,16 @@ impl RecordingManager {
         }
     }
 
+    /// 获取当前活跃录制任务数
+    pub async fn active_count(&self) -> usize {
+        self.active_tasks.lock().await.len()
+    }
+
     /// 关闭应用前优雅停止所有录制并保存状态
-    pub async fn shutdown_all(&self) {
+    /// 返回被停止的活跃任务数
+    pub async fn shutdown_all(&self) -> usize {
         let ids: Vec<String> = self.active_tasks.lock().await.keys().cloned().collect();
+        let count = ids.len();
         for id in &ids {
             info!("shutdown: 停止录制 {}", id);
             let _ = self.stop_recording(id).await;
@@ -222,6 +229,7 @@ impl RecordingManager {
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
         }
         let _ = self.app_state.save_recordings();
+        count
     }
 
     /// ========================================

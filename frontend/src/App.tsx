@@ -10,6 +10,7 @@ import {
 import { RecordingList } from "./pages/RecordingList";
 import { AddTask } from "./pages/AddTask";
 import { SettingsPage } from "./pages/SettingsPage";
+import { ShutdownOverlay } from "./components/ShutdownOverlay";
 import { useRecordings } from "./hooks/useRecordings";
 import { useSettings } from "./hooks/useSettings";
 import { useFfmpegStatus } from "./hooks/useFfmpegStatus";
@@ -53,6 +54,7 @@ function App() {
 
   return (
     <Layout style={{ height: "100vh" }}>
+      <ShutdownOverlay />
       <Sider
         width={240}
         style={{
