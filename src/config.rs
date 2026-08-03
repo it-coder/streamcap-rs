@@ -21,7 +21,16 @@ impl AppState {
         std::fs::create_dir_all(&data_dir).ok();
 
         let settings = Self::load_settings(&data_dir);
-        let recordings = Self::load_recordings(&data_dir);
+        let mut recordings = Self::load_recordings(&data_dir);
+
+        // 重启后清空运行时状态：FFmpeg 进程已不存在，这些标记均过期
+        for r in &mut recordings {
+            r.is_recording = false;
+            r.is_live = false;
+            r.error_message = None;
+            r.recording_dir = None;
+            r.recording_started_at = None;
+        }
 
         Arc::new(Self {
             settings: RwLock::new(settings),

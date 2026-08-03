@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use streamcap_rs::{commands, config, RecordingManager};
 use tauri::Manager;
-use tracing::{error, info};
+use tracing::info;
 
 fn main() {
     tracing_subscriber::fmt::init();
@@ -30,17 +30,25 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 rm_for_polling.start_polling().await;
             });
-            // 4. Tauri v2: 监听窗口关闭事件
+
+            // 窗口关闭时优雅停止所有录制
             if let Some(window) = app.get_webview_window("main") {
                 let app_handle = app.handle().clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        std::thread::sleep(std::time::Duration::from_secs(30));
-                        info!("暂停30s");
-                        if let Some(window) = app_handle.get_webview_window("main") {
-                            let _ = window.destroy();
-                        }
+                        info!("窗口关闭请求，正在停止所有录制...");
+
+                        let rm = app_handle
+                            .state::<Arc<RecordingManager>>()
+                            .inner()
+                            .clone();
+
+                        tauri::async_runtime::spawn(async move {
+                            rm.shutdown_all().await;
+                            info!("录制已停止，退出应用");
+                            std::process::exit(0);
+                        });
                     }
                 });
             }

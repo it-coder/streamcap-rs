@@ -24,7 +24,7 @@ struct ActiveRecording {
 
 /// 录制管理器（线程安全共享）
 pub struct RecordingManager {
-    app_state: Arc<AppState>,
+    pub(crate) app_state: Arc<AppState>,
     app_handle: AppHandle,
     active_tasks: Arc<Mutex<HashMap<String, ActiveRecording>>>,
     status_tx: broadcast::Sender<RecordingConfig>,
@@ -113,6 +113,7 @@ impl RecordingManager {
                 .unwrap()
         };
         self.broadcast(updated_config);
+        let _ = self.app_state.save_recordings();
 
         // 构建输出路径
         let output_dir = Self::build_output_dir(self.app_state.clone(), &config, &stream_info);
@@ -165,6 +166,7 @@ impl RecordingManager {
             }
             let updated = recordings.iter().find(|r| r.id == rid).cloned();
             drop(recordings);
+            let _ = app_state.save_recordings();
             if let Some(cfg) = updated {
                 let _ = status_tx.send(cfg.clone());
                 let _ = app_handle.emit("recording_status", cfg);
@@ -206,6 +208,20 @@ impl RecordingManager {
         } else {
             Err(format!("录制任务 {} 未在运行", recording_id))
         }
+    }
+
+    /// 关闭应用前优雅停止所有录制并保存状态
+    pub async fn shutdown_all(&self) {
+        let ids: Vec<String> = self.active_tasks.lock().await.keys().cloned().collect();
+        for id in &ids {
+            info!("shutdown: 停止录制 {}", id);
+            let _ = self.stop_recording(id).await;
+        }
+        // 等待 FFmpeg 进程优雅退出
+        if !ids.is_empty() {
+            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+        }
+        let _ = self.app_state.save_recordings();
     }
 
     /// ========================================
