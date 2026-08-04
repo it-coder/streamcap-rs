@@ -3712,6 +3712,7 @@ dependencies = [
 [[package]]
 name = "streamget-rs"
 version = "0.1.0"
+source = "git+https://github.com/it-coder/streamget-rs.git?branch=master#9a6fd290712745c0e20aa7fcc62feaca4720690e"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
