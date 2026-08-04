@@ -1,0 +1,59 @@
+name: 'publish'
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # 当你推送一个以 'v' 开头的标签时触发，例如 v1.0.0
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write # 允许 action 创建 Release 和上传文件
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'   # 为 Apple Silicon (M1/M2) 构建
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-latest'   # 为 Intel Mac 构建
+            args: '--target x86_64-apple-darwin'
+          - platform: 'ubuntu-22.04'   # 为 Linux 构建
+            args: ''
+          - platform: 'windows-latest' # 为 Windows 构建
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      # Linux 环境需要安装一些系统依赖
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - name: install frontend dependencies
+        run: npm install # 如果你用 yarn 或 pnpm，请相应修改
+
+      # 核心步骤：使用 tauri-action 构建并发布
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}         # Release 的标签名
+          releaseName: 'App v__VERSION__'         # Release 的标题
+          releaseBody: '请下载对应平台的安装包。' # Release 的描述
+          releaseDraft: true                      # 建议先创建为草稿，检查无误后再发布
+          prerelease: false
+          args: ${{ matrix.args }}
