@@ -1,7 +1,7 @@
 // FFmpeg 状态 hook
 
 import { useEffect, useState } from "react";
-import * as api from "../api/tauri";
+import { api } from "../api/provider";
 
 export function useFfmpegStatus() {
   const [status, setStatus] = useState<"checking" | "available" | "missing">("checking");

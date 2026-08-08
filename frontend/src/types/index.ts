@@ -56,6 +56,12 @@ export interface AppSettings {
   segment_duration_seconds: number;
 }
 
+export interface ShutdownPayload {
+  stage: "start" | "done";
+  activeCount: number;
+  message: string;
+}
+
 // 视频质量选项（供 Select 使用）
 export const QUALITY_OPTIONS: { value: VideoQuality; label: string }[] = [
   { value: "OD", label: "原画" },

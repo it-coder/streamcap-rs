@@ -3,21 +3,38 @@ name = "streamcap-rs"
 version = "0.1.0"
 description = "Rust直播流录制工具 — 基于streamget-rs + Tauri"
 edition = "2021"
+default-run = "streamcap-rs"
 
 [[bin]]
 name = "streamcap-rs"
 path = "src/main.rs"
+required-features = ["desktop"]
+
+[[bin]]
+name = "streamcap-server"
+path = "src/bin/server.rs"
+required-features = ["server"]
 
 [lib]
 name = "streamcap_rs"
 path = "src/lib.rs"
 
+[features]
+default = ["desktop"]
+desktop = [
+    "dep:tauri",
+    "dep:tauri-plugin-shell",
+    "dep:tauri-plugin-notification",
+    "dep:tauri-plugin-dialog",
+    "dep:tauri-plugin-fs",
+]
+server = [
+    "dep:axum",
+    "dep:tower-http",
+]
+
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-shell = "2"
-tauri-plugin-notification = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-fs = "2"
+# 共享依赖（两种模式都需要）
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
@@ -40,6 +57,17 @@ parking_lot = "0.12"
 tokio-util = { version = "0.7", features = ["io"] }
 bytes = "1"
 futures-util = "0.3"
+
+# Desktop 依赖 (optional)
+tauri = { version = "2", features = ["tray-icon"], optional = true }
+tauri-plugin-shell = { version = "2", optional = true }
+tauri-plugin-notification = { version = "2", optional = true }
+tauri-plugin-dialog = { version = "2", optional = true }
+tauri-plugin-fs = { version = "2", optional = true }
+
+# Server 依赖 (optional)
+axum = { version = "0.7", optional = true, features = ["ws"] }
+tower-http = { version = "0.5", optional = true, features = ["fs", "cors"] }
 
 # Local dependency: stream resolution library
 streamget-rs = { git = "https://github.com/it-coder/streamget-rs.git", branch = "master" }

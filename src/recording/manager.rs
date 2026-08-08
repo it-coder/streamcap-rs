@@ -2,6 +2,7 @@
 //!
 //! 参考 StreamCap 的 record_manager.py
 
+use crate::broadcaster::{EventBroadcaster, ShutdownPayload};
 use crate::config::AppState;
 use crate::models::{RecordingConfig, StreamInfo};
 use crate::recording::ffmpeg::{self, FFmpegRecorder};
@@ -10,7 +11,6 @@ use chrono::Utc;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
 use tokio::sync::{broadcast, watch, Mutex};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -25,18 +25,18 @@ struct ActiveRecording {
 /// 录制管理器（线程安全共享）
 pub struct RecordingManager {
     pub(crate) app_state: Arc<AppState>,
-    app_handle: AppHandle,
+    broadcaster: Arc<dyn EventBroadcaster>,
     active_tasks: Arc<Mutex<HashMap<String, ActiveRecording>>>,
     status_tx: broadcast::Sender<RecordingConfig>,
     poll_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl RecordingManager {
-    pub fn new(app_state: Arc<AppState>, app_handle: AppHandle) -> Arc<Self> {
+    pub fn new(app_state: Arc<AppState>, broadcaster: Arc<dyn EventBroadcaster>) -> Arc<Self> {
         let (tx, _) = broadcast::channel(100);
         Arc::new(Self {
             app_state,
-            app_handle,
+            broadcaster,
             active_tasks: Arc::new(Mutex::new(HashMap::new())),
             status_tx: tx,
             poll_handle: Arc::new(Mutex::new(None)),
@@ -52,8 +52,13 @@ impl RecordingManager {
     fn broadcast(&self, config: RecordingConfig) {
         // Rust 内部广播
         let _ = self.status_tx.send(config.clone());
-        // 推送到前端（React listen 订阅）
-        let _ = self.app_handle.emit("recording_status", config);
+        // 推送到前端（Tauri emit 或 WebSocket fan-out）
+        self.broadcaster.broadcast_status(&config);
+    }
+
+    /// 推送关闭事件到前端
+    pub fn broadcast_shutdown(&self, payload: &ShutdownPayload) {
+        self.broadcaster.broadcast_shutdown(payload);
     }
 
     /// ========================================
@@ -134,7 +139,7 @@ impl RecordingManager {
         let rid = recording_id.to_string();
         let app_state = self.app_state.clone();
         let status_tx = self.status_tx.clone();
-        let app_handle = self.app_handle.clone();
+        let broadcaster = self.broadcaster.clone();
         let opts = output_path.clone();
 
         // 启动录制任务
@@ -169,7 +174,7 @@ impl RecordingManager {
             let _ = app_state.save_recordings();
             if let Some(cfg) = updated {
                 let _ = status_tx.send(cfg.clone());
-                let _ = app_handle.emit("recording_status", cfg);
+                broadcaster.broadcast_status(&cfg);
             }
         });
 
@@ -278,7 +283,7 @@ impl RecordingManager {
                             );
 
                             // 更新信息并推送事件
-                            {
+                            let cfg_to_broadcast = {
                                 let mut list = this.app_state.recordings.write();
                                 if let Some(r) = list.iter_mut().find(|r| r.id == recording.id) {
                                     r.is_live = true;
@@ -289,13 +294,17 @@ impl RecordingManager {
                                     }
                                     r.last_check_at = Some(Utc::now());
                                     r.updated_at = Utc::now();
-                                    // 推送状态更新到前端
-                                    let _ = this.app_handle.emit("recording_status", r.clone());
+                                    Some(r.clone())
+                                } else {
+                                    None
                                 }
+                            };
+                            if let Some(cfg) = cfg_to_broadcast {
+                                this.broadcast(cfg);
                             }
 
                             // 并行启动录制，不阻塞后续直播间的检测
-                            // start_recording 内部会再次 emit 事件
+                            // start_recording 内部会再次 broadcast
                             let this_clone = this.clone();
                             let rid = recording.id.clone();
                             tokio::spawn(async move {
@@ -307,11 +316,18 @@ impl RecordingManager {
                         Err(_) => {
                             info!("未开播......{}", &recording.url);
                             // 未开播，更新状态并推送事件
-                            let mut list = this.app_state.recordings.write();
-                            if let Some(r) = list.iter_mut().find(|r| r.id == recording.id) {
-                                r.is_live = false;
-                                r.last_check_at = Some(Utc::now());
-                                let _ = this.app_handle.emit("recording_status", r.clone());
+                            let cfg_to_broadcast = {
+                                let mut list = this.app_state.recordings.write();
+                                if let Some(r) = list.iter_mut().find(|r| r.id == recording.id) {
+                                    r.is_live = false;
+                                    r.last_check_at = Some(Utc::now());
+                                    Some(r.clone())
+                                } else {
+                                    None
+                                }
+                            };
+                            if let Some(cfg) = cfg_to_broadcast {
+                                this.broadcast(cfg);
                             }
                         }
                     }

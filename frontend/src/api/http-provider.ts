@@ -1,0 +1,196 @@
+// HttpApiProvider — B/S 服务器模式实现
+//
+// 使用 fetch() 进行 REST API 调用，WebSocket 进行实时事件订阅。
+// 单个 WebSocket 连接复用所有事件订阅。
+
+import type { ApiProvider } from "./provider";
+import type {
+  RecordingConfig,
+  AppSettings,
+  VideoQuality,
+  ShutdownPayload,
+} from "../types";
+
+export class HttpApiProvider implements ApiProvider {
+  private ws: WebSocket | null = null;
+  private wsReady: Promise<void> | null = null;
+  private statusCallbacks: Set<(status: RecordingConfig) => void> = new Set();
+  private shutdownCallbacks: Set<(payload: ShutdownPayload) => void> = new Set();
+
+  // ========================================
+  // REST API 辅助方法
+  // ========================================
+
+  private async fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+    const res = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+    return res.json();
+  }
+
+  private async fetchVoid(url: string, options?: RequestInit): Promise<void> {
+    const res = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      ...options,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+  }
+
+  // ========================================
+  // 录制任务
+  // ========================================
+
+  async listRecordings(): Promise<RecordingConfig[]> {
+    return this.fetchJson<RecordingConfig[]>("/api/recordings");
+  }
+
+  async addRecording(params: {
+    url: string;
+    monitorEnabled?: boolean;
+    quality?: VideoQuality;
+  }): Promise<RecordingConfig> {
+    return this.fetchJson<RecordingConfig>("/api/recordings", {
+      method: "POST",
+      body: JSON.stringify({
+        url: params.url,
+        monitor_enabled: params.monitorEnabled ?? true,
+        quality: params.quality ?? "OD",
+      }),
+    });
+  }
+
+  async removeRecording(id: string): Promise<void> {
+    return this.fetchVoid(`/api/recordings/${id}`, { method: "DELETE" });
+  }
+
+  async updateRecording(config: RecordingConfig): Promise<void> {
+    return this.fetchVoid(`/api/recordings/${config.id}`, {
+      method: "PUT",
+      body: JSON.stringify(config),
+    });
+  }
+
+  async startMonitor(id: string): Promise<void> {
+    return this.fetchVoid(`/api/recordings/${id}/monitor`, { method: "POST" });
+  }
+
+  async stopMonitor(id: string): Promise<void> {
+    return this.fetchVoid(`/api/recordings/${id}/monitor`, {
+      method: "DELETE",
+    });
+  }
+
+  async startRecording(id: string): Promise<void> {
+    return this.fetchVoid(`/api/recordings/${id}/recording`, {
+      method: "POST",
+    });
+  }
+
+  async stopRecording(id: string): Promise<void> {
+    return this.fetchVoid(`/api/recordings/${id}/recording`, {
+      method: "DELETE",
+    });
+  }
+
+  async getRecordingStatus(id: string): Promise<RecordingConfig | null> {
+    const res = await fetch(`/api/recordings/${id}/status`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  // ========================================
+  // 设置
+  // ========================================
+
+  async getSettings(): Promise<AppSettings> {
+    return this.fetchJson<AppSettings>("/api/settings");
+  }
+
+  async updateSettings(settings: AppSettings): Promise<void> {
+    return this.fetchVoid("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    });
+  }
+
+  async checkFfmpeg(): Promise<string> {
+    const data = await this.fetchJson<{
+      available: boolean;
+      version?: string;
+      error?: string;
+    }>("/api/ffmpeg/check");
+    if (data.available) {
+      return data.version || "unknown";
+    }
+    throw new Error(data.error || "FFmpeg not available");
+  }
+
+  // ========================================
+  // WebSocket 事件订阅
+  // ========================================
+
+  private ensureWs(): Promise<void> {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+    if (this.wsReady) return this.wsReady;
+
+    this.wsReady = new Promise((resolve, reject) => {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/ws/events`;
+
+      this.ws = new WebSocket(wsUrl);
+
+      this.ws.onopen = () => resolve();
+      this.ws.onerror = () => reject(new Error("WebSocket connection failed"));
+      this.ws.onclose = () => {
+        this.ws = null;
+        this.wsReady = null;
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "recording_status") {
+            this.statusCallbacks.forEach((cb) => cb(msg.data));
+          } else if (msg.type === "app:shutdown") {
+            this.shutdownCallbacks.forEach((cb) => cb(msg.data));
+          }
+        } catch (e) {
+          console.error("WebSocket message parse error:", e);
+        }
+      };
+    });
+
+    return this.wsReady;
+  }
+
+  async onStatusChange(
+    callback: (status: RecordingConfig) => void,
+  ): Promise<() => void> {
+    await this.ensureWs();
+    this.statusCallbacks.add(callback);
+    return () => {
+      this.statusCallbacks.delete(callback);
+    };
+  }
+
+  async onShutdown(
+    callback: (payload: ShutdownPayload) => void,
+  ): Promise<() => void> {
+    await this.ensureWs();
+    this.shutdownCallbacks.add(callback);
+    return () => {
+      this.shutdownCallbacks.delete(callback);
+    };
+  }
+}

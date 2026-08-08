@@ -1,12 +1,10 @@
 // 录制列表 hook — 加载数据 + 事件订阅自动刷新
 //
-// 核心优化：通过 Tauri 事件系统监听后端推送的 "recording_status" 事件，
-// 当后端轮询检测到开播、录制开始/结束等状态变更时，自动更新前端列表，
-// 无需手动刷新或轮询。
+// 通过 ApiProvider 抽象层订阅后端推送的状态变更事件，
+// 当后端轮询检测到开播、录制开始/结束等状态变更时，自动更新前端列表。
 
 import { useEffect, useState, useCallback } from "react";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import * as api from "../api/tauri";
+import { api } from "../api/provider";
 import type { RecordingConfig, VideoQuality } from "../types";
 
 export type UseRecordingsResult = {
@@ -28,8 +26,8 @@ export function useRecordings() {
     try {
       const list = await api.listRecordings();
       // merge 而非直接覆盖：
-      // 如果本地已有该 id 且 updated_at 更新（来自 listen 事件的较新数据），保留本地的
-      // 防止 refresh() 返回的列表覆盖掉 listen 刚收到的状态更新
+      // 如果本地已有该 id 且 updated_at 更新（来自事件推送的较新数据），保留本地的
+      // 防止 refresh() 返回的列表覆盖掉事件刚收到的状态更新
       setRecordings((prev) => {
         if (prev.length === 0) return list;
         return list.map((item) => {
@@ -49,29 +47,29 @@ export function useRecordings() {
   }, []);
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
+    let unlisten: (() => void) | undefined;
     let cancelled = false;
 
     // 先注册事件监听，确保不会漏掉 refresh 期间后端推送的状态变更
     // 注册完成后再加载数据，避免竞态条件
-    listen<RecordingConfig>("recording_status", (event) => {
-      if (cancelled) return;
-      const updated = event.payload;
-      setRecordings((prev) =>
-        prev.map((r) => (r.id === updated.id ? updated : r))
-      );
-    })
+    api
+      .onStatusChange((updated) => {
+        if (cancelled) return;
+        setRecordings((prev) =>
+          prev.map((r) => (r.id === updated.id ? updated : r))
+        );
+      })
       .then((fn) => {
         if (cancelled) {
           fn();
         } else {
           unlisten = fn;
-          // listen 注册成功后再加载数据
+          // 事件监听注册成功后再加载数据
           refresh();
         }
       })
       .catch(() => {
-        // listen 注册失败，仍然加载数据
+        // 事件订阅失败，仍然加载数据
         refresh();
       });
 

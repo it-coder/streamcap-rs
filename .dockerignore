@@ -1,0 +1,9 @@
+target/
+frontend/node_modules/
+frontend/dist/
+StreamCap/
+streamget/
+streamget-rs/
+dy-rec/
+dy-rec-rs/
+.git/

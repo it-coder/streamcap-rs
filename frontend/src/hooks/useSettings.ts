@@ -1,7 +1,7 @@
 // 设置 hook
 
 import { useEffect, useState, useCallback } from "react";
-import * as api from "../api/tauri";
+import { api } from "../api/provider";
 import type { AppSettings } from "../types";
 
 export function useSettings() {

@@ -1,6 +1,6 @@
 // 应用关闭时的全屏遮罩提示
 //
-// 监听后端 emit("app:shutdown") 事件：
+// 通过 ApiProvider 订阅关闭事件：
 //   stage="start" — 显示"正在停止录制并保存状态..."
 //   stage="done"  — 显示"已完成，正在退出应用..."
 //
@@ -9,35 +9,32 @@
 import { useEffect, useState } from "react";
 import { Modal, Spin, Typography, Progress } from "antd";
 import { LoadingOutlined, CheckCircleOutlined } from "@ant-design/icons";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { api } from "../api/provider";
+import type { ShutdownPayload } from "../types";
 
 const { Text } = Typography;
-
-interface ShutdownPayload {
-  stage: "start" | "done";
-  activeCount: number;
-  message: string;
-}
 
 export function ShutdownOverlay() {
   const [visible, setVisible] = useState(false);
   const [payload, setPayload] = useState<ShutdownPayload | null>(null);
 
   useEffect(() => {
-    let unlisten: UnlistenFn | undefined;
+    let unlisten: (() => void) | undefined;
     let cancelled = false;
 
-    listen<ShutdownPayload>("app:shutdown", (event) => {
-      if (cancelled) return;
-      setPayload(event.payload);
-      setVisible(true);
-    }).then((fn) => {
-      if (cancelled) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
+    api
+      .onShutdown((p) => {
+        if (cancelled) return;
+        setPayload(p);
+        setVisible(true);
+      })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      });
 
     return () => {
       cancelled = true;
@@ -94,7 +91,7 @@ export function ShutdownOverlay() {
             type="secondary"
             style={{ fontSize: 12, display: "block", marginTop: 12 }}
           >
-            ⚠️ 检测到 {payload.activeCount} 个录制任务正在运行，正在发送停止信号并等待 FFmpeg 优雅退出...
+            检测到 {payload.activeCount} 个录制任务正在运行，正在发送停止信号并等待 FFmpeg 优雅退出...
           </Text>
         )}
       </div>

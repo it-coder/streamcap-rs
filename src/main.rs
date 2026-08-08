@@ -1,11 +1,11 @@
-//! Tauri 应用入口点
+//! Tauri 应用入口点 — 桌面客户端模式
 
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Arc;
-use streamcap_rs::{commands, config, RecordingManager};
-use tauri::{Emitter, Manager};
+use streamcap_rs::{broadcaster::TauriBroadcaster, commands, config, RecordingManager};
+use tauri::Manager;
 use tracing::info;
 
 fn main() {
@@ -21,8 +21,9 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .manage(app_state)
         .setup(move |app| {
-            // AppHandle 在此可用，创建 RecordingManager 并注册
-            let recording_manager = RecordingManager::new(app_state_for_rm, app.handle().clone());
+            // 创建 TauriBroadcaster 并传入 RecordingManager
+            let broadcaster = Arc::new(TauriBroadcaster::new(app.handle().clone()));
+            let recording_manager = RecordingManager::new(app_state_for_rm, broadcaster);
             let rm_for_polling = recording_manager.clone();
             app.manage(recording_manager);
 
@@ -39,37 +40,25 @@ fn main() {
                         api.prevent_close();
                         info!("窗口关闭请求，正在停止所有录制...");
 
-                        let rm = app_handle.state::<Arc<RecordingManager>>().inner().clone();
-                        let ah = app_handle.clone();
+                        let rm = app_handle
+                            .state::<Arc<RecordingManager>>()
+                            .inner()
+                            .clone();
 
                         tauri::async_runtime::spawn(async move {
                             let active = rm.active_count().await;
 
                             // 通知前端：开始关闭流程
-                            let _ = ah.emit(
-                                "app:shutdown",
-                                serde_json::json!({
-                                    "stage": "start",
-                                    "activeCount": active,
-                                    "message": if active > 0 {
-                                        format!("正在停止 {} 个录制任务并保存状态...", active)
-                                    } else {
-                                        "正在保存状态...".to_string()
-                                    }
-                                }),
+                            rm.broadcast_shutdown(
+                                &streamcap_rs::ShutdownPayload::start(active),
                             );
 
                             // 执行优雅停止
                             let stopped = rm.shutdown_all().await;
 
                             // 通知前端：停止完成
-                            let _ = ah.emit(
-                                "app:shutdown",
-                                serde_json::json!({
-                                    "stage": "done",
-                                    "activeCount": stopped,
-                                    "message": "已完成，正在退出应用..."
-                                }),
+                            rm.broadcast_shutdown(
+                                &streamcap_rs::ShutdownPayload::done(stopped),
                             );
 
                             // 给前端 600ms 渲染完成提示
