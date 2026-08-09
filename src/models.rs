@@ -281,6 +281,15 @@ pub struct AppSettings {
     /// 分段时长(秒)，0表示不分段
     #[serde(default)]
     pub segment_duration_seconds: u64,
+    /// 是否启用录制后格式转换（转封装 remux）
+    #[serde(default)]
+    pub enable_conversion: bool,
+    /// 转换的目标格式
+    #[serde(default = "default_conversion_format")]
+    pub conversion_format: OutputFormat,
+    /// 转换后是否删除原始文件（仅成功时删除）
+    #[serde(default = "default_true")]
+    pub delete_original_after_conversion: bool,
 }
 
 fn default_output_dir() -> String {
@@ -293,6 +302,10 @@ fn default_loop_interval() -> u64 {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_conversion_format() -> OutputFormat {
+    OutputFormat::MP4
 }
 
 /// 获取默认下载目录
@@ -316,7 +329,10 @@ impl Default for AppSettings {
             folder_by_anchor: false,
             folder_by_date: true,
             folder_by_title: false,
-            segment_duration_seconds: 0,
+            segment_duration_seconds: 1800,
+            enable_conversion: false,
+            conversion_format: OutputFormat::MP4,
+            delete_original_after_conversion: true,
         }
     }
 }

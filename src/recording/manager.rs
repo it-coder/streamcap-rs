@@ -11,6 +11,7 @@ use chrono::Utc;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{broadcast, watch, Mutex};
 use tokio::task::JoinHandle;
 use tracing::{error, info};
@@ -77,9 +78,13 @@ impl RecordingManager {
         };
 
         // 在独立作用域中读取 settings，确保守卫在 .await 前完全释放
-        let (proxy, quality) = {
+        let (proxy, quality, segment_duration_secs) = {
             let settings = self.app_state.settings.read();
-            (settings.proxy_url.clone(), config.quality.clone())
+            (
+                settings.proxy_url.clone(),
+                config.quality.clone(),
+                settings.segment_duration_seconds,
+            )
         };
 
         info!("开始检测直播: {}", config.url);
@@ -142,7 +147,7 @@ impl RecordingManager {
         let broadcaster = self.broadcaster.clone();
         let opts = output_path.clone();
 
-        // 启动录制任务
+        // 启动录制任务（支持分段循环）
         let handle = tokio::spawn(async move {
             let result = run_ffmpeg_recording(
                 &rid,
@@ -152,6 +157,10 @@ impl RecordingManager {
                 proxy_url.as_deref(),
                 &opts,
                 stop_rx,
+                segment_duration_secs,
+                app_state.clone(),
+                status_tx.clone(),
+                broadcaster.clone(),
             )
             .await;
 
@@ -387,6 +396,9 @@ impl RecordingManager {
 }
 
 /// 运行 FFmpeg 录制循环（在 tokio 任务中执行）
+///
+/// 支持分段录制：当 `segment_duration_secs > 0` 时，每隔指定时长自动切换到新文件。
+/// 文件名格式：`{原始文件名}_part{N}.{ext}`（第一段无后缀）。
 async fn run_ffmpeg_recording(
     recording_id: &str,
     stream_url: &str,
@@ -395,42 +407,132 @@ async fn run_ffmpeg_recording(
     proxy_url: Option<&str>,
     output_path: &PathBuf,
     stop_rx: watch::Receiver<bool>,
+    segment_duration_secs: u64,
+    app_state: Arc<AppState>,
+    status_tx: broadcast::Sender<RecordingConfig>,
+    broadcaster: Arc<dyn EventBroadcaster>,
 ) -> Result<(), String> {
-    let mut recorder = FFmpegRecorder::new(recording_id, output_path.clone());
+    let ext = output_format.extension();
+    let stem = output_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "recording".to_string());
+    let dir = output_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
 
-    recorder
-        .start(stream_url, output_format, user_agent, proxy_url)
-        .await?;
+    let mut segment_num: u32 = 0;
 
     loop {
-        if *stop_rx.borrow() {
-            info!("收到停止信号，优雅停止 FFmpeg...");
-            recorder.request_stop();
-            // 给 recorder 一些时间完成
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        // 构建当前分段的输出路径
+        let segment_path = if segment_num == 0 {
+            output_path.clone()
+        } else {
+            dir.join(format!("{}_part{}.{}", stem, segment_num, ext))
+        };
+
+        info!(
+            "开始录制分段 {}: {:?}",
+            segment_num + 1,
+            segment_path
+        );
+
+        // 更新 segment_count 并广播
+        {
+            let mut recordings = app_state.recordings.write();
+            if let Some(r) = recordings.iter_mut().find(|r| r.id == recording_id) {
+                r.segment_count = segment_num + 1;
+                r.updated_at = Utc::now();
+            }
+        }
+        let _ = app_state.save_recordings();
+        // 广播状态更新
+        {
+            let recordings = app_state.recordings.read();
+            if let Some(cfg) = recordings.iter().find(|r| r.id == recording_id).cloned() {
+                let _ = status_tx.send(cfg.clone());
+                broadcaster.broadcast_status(&cfg);
+            }
+        }
+
+        // 启动 FFmpeg
+        let mut recorder = FFmpegRecorder::new(recording_id, segment_path.clone());
+        recorder
+            .start(stream_url, output_format, user_agent, proxy_url)
+            .await?;
+
+        // 监控循环：等待停止信号 / 流结束 / 分段超时
+        let segment_start = tokio::time::Instant::now();
+        let segment_dur = Duration::from_secs(segment_duration_secs);
+        let mut stream_ended = false;
+        let mut stop_requested = false;
+
+        loop {
+            // 检查停止信号
+            if *stop_rx.borrow() {
+                info!("收到停止信号，优雅停止 FFmpeg...");
+                recorder.stop_gracefully().await;
+                stop_requested = true;
+                break;
+            }
+
+            // 检查分段超时
+            if segment_duration_secs > 0 && segment_start.elapsed() >= segment_dur {
+                info!(
+                    "分段时长到达 ({}秒)，切换到新文件...",
+                    segment_duration_secs
+                );
+                recorder.stop_gracefully().await;
+                break;
+            }
+
+            // 检查 FFmpeg 进程状态
+            match recorder.check_status() {
+                Ok(true) => {
+                    info!("FFmpeg 进程已退出（流结束）");
+                    stream_ended = true;
+                    break;
+                }
+                Ok(false) => {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        }
+
+        // 后处理：格式转换（可配置）
+        let (enable_conversion, conversion_format, delete_original) = {
+            let settings = app_state.settings.read();
+            (
+                settings.enable_conversion,
+                settings.conversion_format.clone(),
+                settings.delete_original_after_conversion,
+            )
+        };
+
+        if enable_conversion {
+            match ffmpeg::convert_format(&segment_path, &conversion_format, delete_original)
+                .await
+            {
+                Ok(converted_path) => {
+                    info!("格式转换完成: {:?}", converted_path);
+                }
+                Err(e) => {
+                    error!("格式转换失败: {}", e);
+                }
+            }
+        }
+
+        // 判断是否继续下一段
+        if stop_requested || stream_ended {
             break;
         }
 
-        match recorder.check_status() {
-            Ok(true) => {
-                // 正常结束
-                break;
-            }
-            Ok(false) => {
-                // 继续等待
-                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-            }
-            Err(e) => {
-                return Err(e);
-            }
-        }
-    }
-
-    // TS → MP4 后处理
-    if *output_format == crate::models::OutputFormat::TS {
-        if let Ok(mp4_path) = ffmpeg::convert_ts_to_mp4(output_path).await {
-            info!("TS->MP4 完成: {:?}", mp4_path);
-        }
+        segment_num += 1;
+        info!("切换到分段 {}", segment_num + 1);
     }
 
     Ok(())

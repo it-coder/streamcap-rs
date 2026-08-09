@@ -8,6 +8,7 @@ import {
   Switch,
   Button,
   Card,
+  Select,
   message,
   Spin,
 } from "antd";
@@ -21,6 +22,7 @@ interface Props {
 
 export function SettingsPage({ settings, loading, onSave }: Props) {
   const [form] = Form.useForm<AppSettings>();
+  const enableConversion = Form.useWatch("enable_conversion", form);
 
   useEffect(() => {
     if (settings) {
@@ -89,6 +91,51 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
           </Form.Item>
           <Form.Item label="按标题创建子文件夹" name="folder_by_title" valuePropName="checked">
             <Switch />
+          </Form.Item>
+        </Card>
+
+        <Card type="inner" title="录制分段" style={{ marginBottom: 16 }}>
+          <Form.Item
+            label="分段时长（秒）"
+            name="segment_duration_seconds"
+            tooltip="录制达到指定时长后自动切换到新文件，0 表示不分段。默认 1800 秒（30 分钟）"
+          >
+            <InputNumber min={0} max={86400} style={{ width: "100%" }} placeholder="1800" />
+          </Form.Item>
+        </Card>
+
+        <Card type="inner" title="格式转换" style={{ marginBottom: 16 }}>
+          <Form.Item
+            label="启用录制后格式转换"
+            name="enable_conversion"
+            valuePropName="checked"
+            tooltip="录制完成后自动转换为目标格式（流复制 remux，无重编码，速度快且无损）。默认关闭"
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label="转换目标格式"
+            name="conversion_format"
+            tooltip="转换后的视频容器格式"
+          >
+            <Select
+              disabled={!enableConversion}
+              options={[
+                { value: "mp4", label: "MP4" },
+                { value: "mkv", label: "MKV" },
+                { value: "mov", label: "MOV" },
+                { value: "flv", label: "FLV" },
+                { value: "ts", label: "TS" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            label="转换后删除原文件"
+            name="delete_original_after_conversion"
+            valuePropName="checked"
+            tooltip="转换成功后自动删除原始录制文件。转换失败时始终保留原文件"
+          >
+            <Switch disabled={!enableConversion} />
           </Form.Item>
         </Card>
 

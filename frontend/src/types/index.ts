@@ -54,6 +54,9 @@ export interface AppSettings {
   folder_by_date: boolean;
   folder_by_title: boolean;
   segment_duration_seconds: number;
+  enable_conversion: boolean;
+  conversion_format: OutputFormat;
+  delete_original_after_conversion: boolean;
 }
 
 export interface ShutdownPayload {

@@ -3,6 +3,7 @@
 use crate::models::OutputFormat;
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::process::{Child, Command};
 use tokio::io::AsyncWriteExt;
 use tracing::{info, warn, error};
@@ -201,6 +202,37 @@ impl FFmpegRecorder {
         self.should_stop = true;
     }
 
+    /// 优雅停止 FFmpeg 进程
+    ///
+    /// 发送 'q' 到 FFmpeg stdin，等待最多 15 秒，超时则强制终止。
+    /// 用于分段切换和手动停止。
+    pub async fn stop_gracefully(&mut self) {
+        if let Some(ref mut process) = self.process {
+            // 发送 'q' 命令到 FFmpeg stdin
+            if let Some(mut stdin) = process.stdin.take() {
+                let _ = stdin.write_all(b"q").await;
+                let _ = stdin.flush().await;
+            }
+
+            // 等待进程退出（最多 15 秒）
+            for _ in 0..15 {
+                match process.try_wait() {
+                    Ok(Some(_)) => {
+                        info!("FFmpeg 已优雅退出");
+                        return;
+                    }
+                    _ => {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                }
+            }
+
+            // 超时强制终止
+            warn!("FFmpeg 未响应优雅停止，强制终止");
+            let _ = process.kill().await;
+        }
+    }
+
     /// 检查进程状态（非阻塞）
     ///
     /// 返回 Ok(true) 表示进程已退出，Ok(false) 表示仍在运行
@@ -253,34 +285,96 @@ impl FFmpegRecorder {
     }
 }
 
-/// 后处理：TS转MP4（流复制，无转码开销）
-pub async fn convert_ts_to_mp4(input: &PathBuf) -> Result<PathBuf, String> {
-    let output = input.with_extension("mp4");
+/// 后处理：格式转换（流复制 remux，无重编码）
+///
+/// 支持任意录制格式之间的互转，全部使用 stream copy（-c copy）。
+/// 特殊处理：
+/// - TS → MP4/MOV：添加 `-bsf:a aac_adtstoasc`（ADTS→ASC 音频流过滤）
+/// - → MP4：添加 `-movflags +faststart`（moov atom 前置，Web 播放友好）
+/// - → MKV：添加 `-f matroska`
+/// - → FLV：添加 `-f flv`
+/// - → TS：添加 `-f mpegts`
+///
+/// 源格式 == 目标格式时跳过转换，直接返回原路径。
+pub async fn convert_format(
+    input: &PathBuf,
+    target_format: &OutputFormat,
+    delete_original: bool,
+) -> Result<PathBuf, String> {
+    let input_ext = input
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let target_ext = target_format.extension();
 
-    info!("TS -> MP4 转换: {:?} -> {:?}", input, output);
+    // 源格式 == 目标格式，跳过
+    if input_ext == target_ext {
+        info!("源格式与目标格式相同({}), 跳过转换", target_ext);
+        return Ok(input.clone());
+    }
+
+    let output = input.with_extension(target_ext);
+    info!("格式转换: {:?} ({}) -> {:?}", input, input_ext, output);
+
+    let mut args: Vec<String> = vec![
+        "-i".into(),
+        input.to_string_lossy().into(),
+        "-c:v".into(), "copy".into(),
+        "-c:a".into(), "copy".into(),
+        "-y".into(),
+    ];
+
+    // TS → MP4/MOV 需要 aac_adtstoasc 比特流过滤器
+    if input_ext == "ts" && matches!(target_format, OutputFormat::MP4 | OutputFormat::MOV) {
+        args.push("-bsf:a".into());
+        args.push("aac_adtstoasc".into());
+    }
+
+    // 目标格式特定参数
+    match target_format {
+        OutputFormat::MP4 => {
+            args.push("-movflags".into());
+            args.push("+faststart".into());
+        }
+        OutputFormat::MKV => {
+            args.push("-f".into());
+            args.push("matroska".into());
+        }
+        OutputFormat::FLV => {
+            args.push("-f".into());
+            args.push("flv".into());
+        }
+        OutputFormat::TS => {
+            args.push("-f".into());
+            args.push("mpegts".into());
+        }
+        OutputFormat::MOV => {}
+    }
+
+    args.push(output.to_string_lossy().into());
 
     let status = Command::new("ffmpeg")
-        .args([
-            "-i",
-            &input.to_string_lossy(),
-            "-c:v", "copy",
-            "-c:a", "copy",
-            "-f", "mp4",
-            "-y",
-            &output.to_string_lossy(),
-        ])
+        .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status()
         .await
-        .map_err(|e| format!("TS转MP4失败: {}", e))?;
+        .map_err(|e| format!("格式转换失败: {}", e))?;
 
     if status.success() {
-        // 删除原TS文件
-        let _ = std::fs::remove_file(input);
+        // 仅在成功且配置允许时删除原文件
+        if delete_original {
+            match std::fs::remove_file(input) {
+                Ok(_) => info!("已删除原文件: {:?}", input),
+                Err(e) => warn!("删除原文件失败: {:?} - {}", input, e),
+            }
+        }
+        info!("格式转换完成: {:?}", output);
         Ok(output)
     } else {
-        Err(format!("TS转MP4失败, exit code: {:?}", status.code()))
+        let err = format!("格式转换失败, exit code: {:?}", status.code());
+        error!("{}", err);
+        Err(err)
     }
 }
 
