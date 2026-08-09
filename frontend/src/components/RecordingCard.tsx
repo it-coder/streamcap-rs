@@ -106,14 +106,16 @@ export function RecordingCard({
         {recording.title || "等待检测..."}
       </div>
 
-      <Space size="middle" style={{ color: "#6B7280", fontSize: 12, marginBottom: 12 }}>
-        <span>📹 {qualityLabel}</span>
-        {recording.recording_started_at && (
-          <Tooltip title={`开始: ${new Date(recording.recording_started_at).toLocaleString()}`}>
-            <span>⏱️ {new Date(recording.recording_started_at).toLocaleTimeString()}</span>
-          </Tooltip>
-        )}
-      </Space>
+      <div style={{ marginBottom: 12 }}>
+        <Space size="middle" style={{ color: "#6B7280", fontSize: 12 }}>
+          <span>📹 {qualityLabel}</span>
+          {recording.recording_started_at && (
+            <Tooltip title={`开始: ${new Date(recording.recording_started_at).toLocaleString()}`}>
+              <span>⏱️ {new Date(recording.recording_started_at).toLocaleTimeString()}</span>
+            </Tooltip>
+          )}
+        </Space>
+      </div>
 
       {recording.error_message && (
         <div style={{ color: "#EF4444", fontSize: 12, marginBottom: 8 }}>
