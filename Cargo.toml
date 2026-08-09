@@ -1,6 +1,6 @@
 [package]
 name = "streamcap-rs"
-version = "0.1.0"
+version = "0.2.0"
 description = "Rust直播流录制工具 — 基于streamget-rs + Tauri"
 edition = "2021"
 default-run = "streamcap-rs"
