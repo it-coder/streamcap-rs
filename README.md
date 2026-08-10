@@ -8,6 +8,7 @@ Rust 直播流录制工具 — 基于 [streamget-rs](https://github.com/it-coder
 - **自动监控录制** — 定时轮询检测开播，自动开始/停止录制
 - **FFmpeg 录制** — 支持多画质（原画/超清/高清/标清）、多格式（MP4/TS/MKV/FLV/MOV）
 - **分段录制** — 可配置分段时长，避免单文件过大
+- **格式转换** — 录制后可选自动转码（MP4/MKV/MOV/FLV/TS），流复制无重编码，可配置是否删除原文件
 - **目录规则** — 按平台/主播/日期/标题自动归类
 - **代理支持** — 可配置 HTTP 代理访问直播流
 - **实时状态推送** — 桌面模式 Tauri 事件 / 服务器模式 WebSocket
@@ -73,16 +74,20 @@ cd frontend && npm run dev
 ### 方式四：Docker 部署
 
 ```bash
+# 方式 A：拉取 GHCR 预构建镜像（推荐）
+docker pull ghcr.io/<owner>/streamcap-rs:latest
+
+# 方式 B：本地构建
 docker build -t streamcap-rs .
 
-# 录制文件挂载到宿主机 /path/to/recordings
+# 运行（录制文件挂载到宿主机）
 docker run -d \
   -p 8080:8080 \
   -v /path/to/recordings:/app/recordings \
-  streamcap-rs
+  ghcr.io/<owner>/streamcap-rs:latest
 ```
 
-Docker 镜像内置 FFmpeg，无需额外安装。
+Docker 镜像内置 FFmpeg，无需额外安装。多平台支持 `linux/amd64` + `linux/arm64`。
 
 ## 服务器命令行参数
 
@@ -143,6 +148,10 @@ streamcap-rs/
 │   └── package.json
 ├── capabilities/
 │   └── default.json             # Tauri v2 权限配置
+├── .github/workflows/
+│   ├── ci.yml                   # CI 检查 (cargo check + clippy + 前端构建)
+│   ├── main.yml                 # 桌面客户端打包发布 (tag 触发)
+│   └── docker-build.yml         # Docker 镜像构建推送 (tag 触发)
 ├── build.rs                     # Tauri build script
 ├── tauri.conf.json              # Tauri 配置
 ├── Cargo.toml                   # Rust 依赖 + features
@@ -251,7 +260,10 @@ cargo build --release --no-default-features --features server --bin streamcap-se
 | `folder_by_anchor` | 按主播分文件夹 | false |
 | `folder_by_date` | 按日期分文件夹 | true |
 | `folder_by_title` | 按标题分文件夹 | false |
-| `segment_duration_seconds` | 分段时长(秒) | 0 (不分段) |
+| `segment_duration_seconds` | 分段时长(秒) | 1800 (30分钟) |
+| `enable_conversion` | 录制后启用格式转换 | false |
+| `conversion_format` | 转换目标格式 | MP4 |
+| `delete_original_after_conversion` | 转换后删除原文件 | true |
 
 ## 两种模式对比
 
@@ -264,6 +276,24 @@ cargo build --release --no-default-features --features server --bin streamcap-se
 | 文件路径 | 用户选择 | 服务器端配置 |
 | 多用户 | 单用户 | 多浏览器共享同一任务列表 |
 | 部署方式 | 安装包 | Docker / 二进制 |
+
+## CI/CD
+
+| Workflow | 触发条件 | 说明 |
+|----------|---------|------|
+| `ci.yml` | push / PR → main | `cargo check` + `cargo clippy`（desktop + server 两种 feature）、前端 `npm run build` |
+| `main.yml` | tag `v*.*.*` | Tauri 桌面客户端多平台打包（macOS ARM/Intel、Linux、Windows），自动创建 GitHub Release |
+| `docker-build.yml` | tag `v*.*.*` / 手动 | 多平台 Docker 镜像构建（amd64 + arm64），推送到 GHCR |
+
+### 拉取 Docker 镜像
+
+```bash
+# 拉取最新版
+docker pull ghcr.io/<owner>/streamcap-rs:latest
+
+# 拉取指定版本
+docker pull ghcr.io/<owner>/streamcap-rs:1.0.0
+```
 
 ## License
 

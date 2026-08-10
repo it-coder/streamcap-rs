@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*.*.*' # 当你推送一个以 'v' 开头的标签时触发，例如 v1.0.0
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   publish-tauri:
     permissions:
@@ -30,11 +34,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+          key: ${{ matrix.platform }}-${{ matrix.args }}
 
       # Linux 环境需要安装一些系统依赖
       - name: install dependencies (ubuntu only)
@@ -45,7 +57,7 @@ jobs:
 
       - name: install frontend dependencies
         working-directory: ./frontend
-        run: npm install # 如果你用 yarn 或 pnpm，请相应修改
+        run: npm ci
 
       # 核心步骤：使用 tauri-action 构建并发布
       - uses: tauri-apps/tauri-action@v1

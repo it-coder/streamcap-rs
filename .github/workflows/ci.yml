@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: cargo check (desktop)
+        run: cargo check --bin streamcap-rs
+
+      - name: cargo check (server)
+        run: cargo check --no-default-features --features server --bin streamcap-server
+
+      - name: cargo clippy (desktop)
+        run: cargo clippy --bin streamcap-rs -- -D warnings
+
+      - name: cargo clippy (server)
+        run: cargo clippy --no-default-features --features server --bin streamcap-server -- -D warnings
+
+  frontend-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: build frontend
+        working-directory: ./frontend
+        run: npm run build
