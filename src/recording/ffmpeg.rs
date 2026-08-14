@@ -143,7 +143,7 @@ impl FFmpegRecorder {
             args.join(" ")
         );
 
-        let child = Command::new(program)
+        let mut child = Command::new(program)
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -151,6 +151,19 @@ impl FFmpegRecorder {
             .kill_on_drop(true)
             .spawn()
             .map_err(|e| format!("启动 FFmpeg 失败: {} (请确认 FFmpeg 已安装并在 PATH 中)", e))?;
+
+        // 消费 stderr 管道：不读取会导致管道缓冲区（约64KB）写满后 FFmpeg 阻塞。
+        // 逐行读取并输出到 tracing 日志，FFmpeg 退出后管道关闭，task 自然结束。
+        if let Some(stderr) = child.stderr.take() {
+            let rid = self.recording_id.clone();
+            tokio::spawn(async move {
+                use tokio::io::{AsyncBufReadExt, BufReader};
+                let mut lines = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    tracing::debug!("[FFmpeg:{}] {}", rid, line);
+                }
+            });
+        }
 
         self.process = Some(child);
         self.should_stop = false;
@@ -364,7 +377,7 @@ pub async fn convert_format(
     if status.success() {
         // 仅在成功且配置允许时删除原文件
         if delete_original {
-            match std::fs::remove_file(input) {
+            match tokio::fs::remove_file(input).await {
                 Ok(_) => info!("已删除原文件: {:?}", input),
                 Err(e) => warn!("删除原文件失败: {:?} - {}", input, e),
             }

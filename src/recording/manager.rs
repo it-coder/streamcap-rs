@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{broadcast, watch, Mutex};
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// 活跃录制任务跟踪
 struct ActiveRecording {
@@ -123,11 +123,13 @@ impl RecordingManager {
                 .unwrap()
         };
         self.broadcast(updated_config);
-        let _ = self.app_state.save_recordings();
+        let _ = self.app_state.save_recordings().await;
 
         // 构建输出路径
         let output_dir = Self::build_output_dir(self.app_state.clone(), &config, &stream_info);
-        std::fs::create_dir_all(&output_dir).map_err(|e| format!("创建输出目录失败: {}", e))?;
+        tokio::fs::create_dir_all(&output_dir)
+            .await
+            .map_err(|e| format!("创建输出目录失败: {}", e))?;
 
         let filename = Self::build_filename(&config, &stream_info);
         let ext = config.output_format.extension();
@@ -164,23 +166,24 @@ impl RecordingManager {
             )
             .await;
 
-            // 录制结束，更新状态
-            let mut recordings = app_state.recordings.write();
-            if let Some(r) = recordings.iter_mut().find(|r| r.id == rid) {
-                r.is_recording = false;
-                r.is_live = false;
-                r.updated_at = Utc::now();
-                match &result {
-                    Ok(_) => info!("录制 {} 完成", rid),
-                    Err(e) => {
-                        error!("录制 {} 失败: {}", rid, e);
-                        r.error_message = Some(e.clone());
+            // 录制结束，更新状态（块作用域确保锁守卫在 .await 前释放）
+            let updated = {
+                let mut recordings = app_state.recordings.write();
+                if let Some(r) = recordings.iter_mut().find(|r| r.id == rid) {
+                    r.is_recording = false;
+                    r.is_live = false;
+                    r.updated_at = Utc::now();
+                    match &result {
+                        Ok(_) => info!("录制 {} 完成", rid),
+                        Err(e) => {
+                            error!("录制 {} 失败: {}", rid, e);
+                            r.error_message = Some(e.clone());
+                        }
                     }
                 }
-            }
-            let updated = recordings.iter().find(|r| r.id == rid).cloned();
-            drop(recordings);
-            let _ = app_state.save_recordings();
+                recordings.iter().find(|r| r.id == rid).cloned()
+            };
+            let _ = app_state.save_recordings().await;
             if let Some(cfg) = updated {
                 let _ = status_tx.send(cfg.clone());
                 broadcaster.broadcast_status(&cfg);
@@ -232,17 +235,48 @@ impl RecordingManager {
     /// 关闭应用前优雅停止所有录制并保存状态
     /// 返回被停止的活跃任务数
     pub async fn shutdown_all(&self) -> usize {
-        let ids: Vec<String> = self.active_tasks.lock().await.keys().cloned().collect();
-        let count = ids.len();
-        for id in &ids {
-            info!("shutdown: 停止录制 {}", id);
-            let _ = self.stop_recording(id).await;
+        // 1. 先停止轮询循环，避免关闭过程中触发新录制
+        if let Some(handle) = self.poll_handle.lock().await.take() {
+            handle.abort();
+            let _ = handle.await;
+            info!("shutdown: 轮询循环已停止");
         }
-        // 等待 FFmpeg 进程优雅退出
-        if !ids.is_empty() {
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+        // 2. 取出所有活跃任务（drain 并尽早释放锁）
+        let mut tasks = self.active_tasks.lock().await;
+        let active: Vec<ActiveRecording> = tasks.drain().map(|(_, v)| v).collect();
+        let count = active.len();
+        drop(tasks);
+
+        if count == 0 {
+            let _ = self.app_state.save_recordings().await;
+            return 0;
         }
-        let _ = self.app_state.save_recordings();
+
+        // 3. 发送停止信号
+        for ar in &active {
+            let _ = ar.stop_tx.send(true);
+        }
+        info!("shutdown: 已发送 {} 个停止信号", count);
+
+        // 4. 等待所有录制任务真正完成（总超时 30s，超时由 kill_on_drop 兜底）
+        let handles: Vec<JoinHandle<()>> = active.into_iter().map(|ar| ar.task_handle).collect();
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            async {
+                for handle in handles {
+                    let _ = handle.await;
+                }
+            },
+        )
+        .await;
+
+        match result {
+            Ok(_) => info!("shutdown: 所有录制任务已优雅退出"),
+            Err(_) => warn!("shutdown: 部分录制任务 30s 未完成，将被 kill_on_drop 强杀"),
+        }
+
+        let _ = self.app_state.save_recordings().await;
         count
     }
 
@@ -446,7 +480,7 @@ async fn run_ffmpeg_recording(
                 r.updated_at = Utc::now();
             }
         }
-        let _ = app_state.save_recordings();
+        let _ = app_state.save_recordings().await;
         // 广播状态更新
         {
             let recordings = app_state.recordings.read();

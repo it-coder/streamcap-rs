@@ -49,12 +49,14 @@ pub async fn add_recording(
         segment_count: 0,
     };
 
-    let mut recordings = state.recordings.write();
-    recordings.push(config.clone());
-    drop(recordings);
+    {
+        let mut recordings = state.recordings.write();
+        recordings.push(config.clone());
+    }
 
     state
         .save_recordings()
+        .await
         .map_err(|e| format!("保存失败: {}", e))?;
 
     Ok(config)
@@ -62,35 +64,41 @@ pub async fn add_recording(
 
 /// 删除录制任务
 #[tauri::command]
-pub fn remove_recording(
+pub async fn remove_recording(
     state: State<'_, Arc<AppState>>,
     id: String,
 ) -> Result<(), String> {
-    let mut recordings = state.recordings.write();
-    recordings.retain(|r| r.id != id);
-    drop(recordings);
+    {
+        let mut recordings = state.recordings.write();
+        recordings.retain(|r| r.id != id);
+    }
 
     state
         .save_recordings()
+        .await
         .map_err(|e| format!("保存失败: {}", e))
 }
 
 /// 更新录制任务
 #[tauri::command]
-pub fn update_recording(
+pub async fn update_recording(
     state: State<'_, Arc<AppState>>,
     config: RecordingConfig,
 ) -> Result<(), String> {
-    let mut recordings = state.recordings.write();
-    if let Some(existing) = recordings.iter_mut().find(|r| r.id == config.id) {
-        *existing = RecordingConfig {
-            updated_at: Utc::now(),
-            ..config
-        };
+    {
+        let mut recordings = state.recordings.write();
+        if let Some(existing) = recordings.iter_mut().find(|r| r.id == config.id) {
+            *existing = RecordingConfig {
+                updated_at: Utc::now(),
+                ..config
+            };
+        }
     }
-    drop(recordings);
 
-    state.save_recordings().map_err(|e| format!("保存失败: {}", e))
+    state
+        .save_recordings()
+        .await
+        .map_err(|e| format!("保存失败: {}", e))
 }
 
 /// 获取录制列表
@@ -102,26 +110,34 @@ pub fn list_recordings(state: State<'_, Arc<AppState>>) -> Result<Vec<RecordingC
 
 /// 启用监控
 #[tauri::command]
-pub fn start_monitor(state: State<'_, Arc<AppState>>, id: String) -> Result<(), String> {
-    let mut recordings = state.recordings.write();
-    if let Some(r) = recordings.iter_mut().find(|r| r.id == id) {
-        r.monitor_enabled = true;
-        r.updated_at = Utc::now();
+pub async fn start_monitor(state: State<'_, Arc<AppState>>, id: String) -> Result<(), String> {
+    {
+        let mut recordings = state.recordings.write();
+        if let Some(r) = recordings.iter_mut().find(|r| r.id == id) {
+            r.monitor_enabled = true;
+            r.updated_at = Utc::now();
+        }
     }
-    drop(recordings);
-    state.save_recordings().map_err(|e| format!("保存失败: {}", e))
+    state
+        .save_recordings()
+        .await
+        .map_err(|e| format!("保存失败: {}", e))
 }
 
 /// 停止监控
 #[tauri::command]
-pub fn stop_monitor(state: State<'_, Arc<AppState>>, id: String) -> Result<(), String> {
-    let mut recordings = state.recordings.write();
-    if let Some(r) = recordings.iter_mut().find(|r| r.id == id) {
-        r.monitor_enabled = false;
-        r.updated_at = Utc::now();
+pub async fn stop_monitor(state: State<'_, Arc<AppState>>, id: String) -> Result<(), String> {
+    {
+        let mut recordings = state.recordings.write();
+        if let Some(r) = recordings.iter_mut().find(|r| r.id == id) {
+            r.monitor_enabled = false;
+            r.updated_at = Utc::now();
+        }
     }
-    drop(recordings);
-    state.save_recordings().map_err(|e| format!("保存失败: {}", e))
+    state
+        .save_recordings()
+        .await
+        .map_err(|e| format!("保存失败: {}", e))
 }
 
 /// 手动开始录制

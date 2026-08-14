@@ -59,15 +59,22 @@ impl AppState {
         }
     }
 
-    pub fn save_settings(&self) -> Result<(), String> {
-        let settings = self.settings.read();
-        let json = serde_json::to_string_pretty(&*settings).map_err(|e| e.to_string())?;
+    pub async fn save_settings(&self) -> Result<(), String> {
+        // 在独立作用域中序列化，确保锁守卫在 .await 前释放（否则 future 非 Send）
+        let json = {
+            let settings = self.settings.read();
+            serde_json::to_string_pretty(&*settings).map_err(|e| e.to_string())?
+        };
 
         let path = Self::settings_path(&self.data_dir);
         // 原子写入：先写临时文件，再 rename
         let tmp_path = path.with_extension("json.tmp");
-        std::fs::write(&tmp_path, json).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
+        tokio::fs::write(&tmp_path, json)
+            .await
+            .map_err(|e| e.to_string())?;
+        tokio::fs::rename(&tmp_path, &path)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -83,14 +90,21 @@ impl AppState {
         }
     }
 
-    pub fn save_recordings(&self) -> Result<(), String> {
-        let recordings = self.recordings.read();
-        let json = serde_json::to_string_pretty(&*recordings).map_err(|e| e.to_string())?;
+    pub async fn save_recordings(&self) -> Result<(), String> {
+        // 在独立作用域中序列化，确保锁守卫在 .await 前释放（否则 future 非 Send）
+        let json = {
+            let recordings = self.recordings.read();
+            serde_json::to_string_pretty(&*recordings).map_err(|e| e.to_string())?
+        };
 
         let path = Self::recordings_path(&self.data_dir);
         let tmp_path = path.with_extension("json.tmp");
-        std::fs::write(&tmp_path, json).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp_path, &path).map_err(|e| e.to_string())?;
+        tokio::fs::write(&tmp_path, json)
+            .await
+            .map_err(|e| e.to_string())?;
+        tokio::fs::rename(&tmp_path, &path)
+            .await
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 }

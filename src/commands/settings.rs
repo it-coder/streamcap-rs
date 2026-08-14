@@ -14,12 +14,15 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<AppSettings, Stri
 
 /// 更新设置
 #[tauri::command]
-pub fn update_settings(
+pub async fn update_settings(
     state: State<'_, Arc<AppState>>,
     settings: AppSettings,
 ) -> Result<(), String> {
     *state.settings.write() = settings;
-    state.save_settings().map_err(|e| format!("保存失���: {}", e))
+    state
+        .save_settings()
+        .await
+        .map_err(|e| format!("保存失败: {}", e))
 }
 
 /// 检查 FFmpeg 是否可用

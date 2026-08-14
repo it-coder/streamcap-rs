@@ -87,13 +87,16 @@ pub async fn add_recording(
         segment_count: 0,
     };
 
-    let mut recordings = state.app_state.recordings.write();
-    recordings.push(config.clone());
-    drop(recordings);
+    // 块作用域确保锁守卫在 .await 前释放（否则 future 非 Send）
+    {
+        let mut recordings = state.app_state.recordings.write();
+        recordings.push(config.clone());
+    }
 
     state
         .app_state
         .save_recordings()
+        .await
         .map_err(|e| ApiError(format!("保存失败: {}", e)))?;
 
     Ok(Json(config))
@@ -104,13 +107,15 @@ pub async fn remove_recording(
     State(state): State<Arc<ServerState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let mut recordings = state.app_state.recordings.write();
-    recordings.retain(|r| r.id != id);
-    drop(recordings);
+    {
+        let mut recordings = state.app_state.recordings.write();
+        recordings.retain(|r| r.id != id);
+    }
 
     state
         .app_state
         .save_recordings()
+        .await
         .map_err(|e| ApiError(format!("保存失败: {}", e)))?;
 
     Ok(Json(json!({ "success": true })))
@@ -122,18 +127,20 @@ pub async fn update_recording(
     Path(id): Path<String>,
     Json(config): Json<RecordingConfig>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let mut recordings = state.app_state.recordings.write();
-    if let Some(existing) = recordings.iter_mut().find(|r| r.id == id) {
-        *existing = RecordingConfig {
-            updated_at: Utc::now(),
-            ..config
-        };
+    {
+        let mut recordings = state.app_state.recordings.write();
+        if let Some(existing) = recordings.iter_mut().find(|r| r.id == id) {
+            *existing = RecordingConfig {
+                updated_at: Utc::now(),
+                ..config
+            };
+        }
     }
-    drop(recordings);
 
     state
         .app_state
         .save_recordings()
+        .await
         .map_err(|e| ApiError(format!("保存失败: {}", e)))?;
 
     Ok(Json(json!({ "success": true })))
@@ -159,15 +166,17 @@ pub async fn start_monitor(
     State(state): State<Arc<ServerState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let mut recordings = state.app_state.recordings.write();
-    if let Some(r) = recordings.iter_mut().find(|r| r.id == id) {
-        r.monitor_enabled = true;
-        r.updated_at = Utc::now();
+    {
+        let mut recordings = state.app_state.recordings.write();
+        if let Some(r) = recordings.iter_mut().find(|r| r.id == id) {
+            r.monitor_enabled = true;
+            r.updated_at = Utc::now();
+        }
     }
-    drop(recordings);
     state
         .app_state
         .save_recordings()
+        .await
         .map_err(|e| ApiError(format!("保存失败: {}", e)))?;
 
     Ok(Json(json!({ "success": true })))
@@ -178,15 +187,17 @@ pub async fn stop_monitor(
     State(state): State<Arc<ServerState>>,
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let mut recordings = state.app_state.recordings.write();
-    if let Some(r) = recordings.iter_mut().find(|r| r.id == id) {
-        r.monitor_enabled = false;
-        r.updated_at = Utc::now();
+    {
+        let mut recordings = state.app_state.recordings.write();
+        if let Some(r) = recordings.iter_mut().find(|r| r.id == id) {
+            r.monitor_enabled = false;
+            r.updated_at = Utc::now();
+        }
     }
-    drop(recordings);
     state
         .app_state
         .save_recordings()
+        .await
         .map_err(|e| ApiError(format!("保存失败: {}", e)))?;
 
     Ok(Json(json!({ "success": true })))
@@ -237,6 +248,7 @@ pub async fn update_settings(
     state
         .app_state
         .save_settings()
+        .await
         .map_err(|e| ApiError(format!("保存失败: {}", e)))?;
     Ok(Json(json!({ "success": true })))
 }
