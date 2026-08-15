@@ -30,3 +30,9 @@ pub async fn update_settings(
 pub fn check_ffmpeg() -> Result<String, String> {
     crate::recording::ffmpeg::check_ffmpeg_available()
 }
+
+/// 获取应用版本号（单一可信源 = Cargo.toml version）
+#[tauri::command]
+pub fn get_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}

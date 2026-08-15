@@ -59,6 +59,12 @@ pub fn build_router(state: Arc<ServerState>, static_dir: &str) -> Router {
             get(handlers::get_settings).put(handlers::update_settings),
         )
         .route("/api/ffmpeg/check", get(handlers::check_ffmpeg))
+        .route("/api/version", get(handlers::get_version))
+        // ========================================
+        // 文件浏览 API
+        // ========================================
+        .route("/api/files", get(handlers::list_files))
+        .route("/api/files/download", get(handlers::download_file))
         // ========================================
         // WebSocket 实时事件
         // ========================================

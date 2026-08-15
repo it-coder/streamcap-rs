@@ -84,6 +84,9 @@ fn main() {
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::check_ffmpeg,
+            commands::settings::get_version,
+            commands::files::list_files,
+            commands::files::open_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running streamcap-rs");

@@ -11,6 +11,8 @@ import type {
   VideoQuality,
   ShutdownPayload,
   RecordingProgress,
+  AppVersion,
+  FileEntry,
 } from "../types";
 
 export class TauriApiProvider implements ApiProvider {
@@ -76,6 +78,23 @@ export class TauriApiProvider implements ApiProvider {
 
   async checkFfmpeg(): Promise<string> {
     return invoke<string>("check_ffmpeg");
+  }
+
+  // ========================================
+  // 应用元信息 & 文件浏览
+  // ========================================
+
+  async getVersion(): Promise<AppVersion> {
+    const v = await invoke<string>("get_version");
+    return { version: v };
+  }
+
+  async listFiles(dir?: string): Promise<FileEntry[]> {
+    return invoke<FileEntry[]>("list_files", { dir: dir ?? null });
+  }
+
+  async openFile(path: string): Promise<void> {
+    return invoke<void>("open_file", { path });
   }
 
   // ========================================

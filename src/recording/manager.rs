@@ -180,24 +180,79 @@ impl RecordingManager {
         let opts = output_path.clone();
         let schedule = config.schedule.clone();
 
-        // 启动录制任务（支持分段循环）
+        // 启动录制任务（支持分段循环 + 失败自动重试）
         let handle = tokio::spawn(async move {
-            let result = run_ffmpeg_recording(
-                &rid,
-                &stream_url,
-                &output_format,
-                &user_agent,
-                proxy_url.as_deref(),
-                &opts,
-                stop_rx,
-                segment_duration_secs,
-                threshold_gb,
-                schedule,
-                app_state.clone(),
-                status_tx.clone(),
-                broadcaster.clone(),
-            )
-            .await;
+            // 读取重试配置
+            let (max_retries, retry_delay_seconds) = {
+                let settings = app_state.settings.read();
+                (settings.max_retries, settings.retry_delay_seconds)
+            };
+
+            // 重试循环：仅在真实 FFmpeg 错误时重试；
+            // 主播下播 / 用户停止 / 磁盘满 均通过 run_ffmpeg_recording 的 Ok 分支结束，不会重试
+            let mut attempt: u32 = 0;
+            let final_result: Result<(), String> = loop {
+                let result = run_ffmpeg_recording(
+                    &rid,
+                    &stream_url,
+                    &output_format,
+                    &user_agent,
+                    proxy_url.as_deref(),
+                    &opts,
+                    stop_rx.clone(),
+                    segment_duration_secs,
+                    threshold_gb,
+                    schedule.clone(),
+                    app_state.clone(),
+                    status_tx.clone(),
+                    broadcaster.clone(),
+                )
+                .await;
+
+                match result {
+                    Ok(()) => {
+                        // 正常结束：清除重试计数
+                        {
+                            let mut recs = app_state.recordings.write();
+                            if let Some(r) = recs.iter_mut().find(|r| r.id == rid) {
+                                r.retry_count = 0;
+                            }
+                        }
+                        break Ok(());
+                    }
+                    Err(e) => {
+                        if attempt >= max_retries {
+                            error!("录制 {} 最终失败（已重试 {} 次）: {}", rid, attempt, e);
+                            break Err(e);
+                        }
+                        attempt += 1;
+                        warn!("录制 {} 失败，{}/{} 次重试: {}", rid, attempt, max_retries, e);
+                        // 广播"重试中"状态
+                        {
+                            let mut recs = app_state.recordings.write();
+                            if let Some(r) = recs.iter_mut().find(|r| r.id == rid) {
+                                r.retry_count = attempt;
+                                r.error_message = None;
+                                r.updated_at = Utc::now();
+                            }
+                        }
+                        let cfg = {
+                            let recs = app_state.recordings.read();
+                            recs.iter().find(|r| r.id == rid).cloned()
+                        };
+                        let _ = app_state.save_recordings().await;
+                        if let Some(c) = cfg {
+                            let _ = status_tx.send(c.clone());
+                            broadcaster.broadcast_status(&c);
+                        }
+                        // 可中断退避：等待 retry_delay_seconds * attempt 秒，期间用户停止则立即放弃
+                        if !cancellable_sleep(&stop_rx, retry_delay_seconds * attempt as u64).await {
+                            info!("退避期间收到停止信号，放弃重试: {}", rid);
+                            break Err(format!("录制 {} 已被用户停止", rid));
+                        }
+                    }
+                }
+            };
 
             // 录制结束，更新状态（块作用域确保锁守卫在 .await 前释放）
             let updated = {
@@ -205,8 +260,9 @@ impl RecordingManager {
                 if let Some(r) = recordings.iter_mut().find(|r| r.id == rid) {
                     r.is_recording = false;
                     r.is_live = false;
+                    r.retry_count = 0;
                     r.updated_at = Utc::now();
-                    match &result {
+                    match &final_result {
                         Ok(_) => info!("录制 {} 完成", rid),
                         Err(e) => {
                             error!("录制 {} 失败: {}", rid, e);
@@ -695,4 +751,18 @@ fn sanitize(name: &str) -> String {
         })
         .take(50)
         .collect()
+}
+
+/// 可中断的退避等待：每 1 秒检查一次停止信号，被停止则返回 false
+async fn cancellable_sleep(stop_rx: &tokio::sync::watch::Receiver<bool>, total_secs: u64) -> bool {
+    let mut slept = 0u64;
+    while slept < total_secs {
+        if *stop_rx.borrow() {
+            return false;
+        }
+        let step = std::cmp::min(1u64, total_secs - slept);
+        tokio::time::sleep(Duration::from_secs(step)).await;
+        slept += step;
+    }
+    true
 }

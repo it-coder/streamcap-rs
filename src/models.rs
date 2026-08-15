@@ -258,6 +258,24 @@ pub struct RecordingConfig {
     /// 录制段数
     #[serde(default)]
     pub segment_count: u32,
+    /// 当前重试次数（0=未重试，仅录制失败自动重试时 >0）
+    #[serde(default)]
+    pub retry_count: u32,
+}
+
+/// 文件条目（文件浏览 API 返回）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileEntry {
+    /// 文件名
+    pub name: String,
+    /// 完整路径
+    pub path: String,
+    /// 是否为目录
+    pub is_dir: bool,
+    /// 文件大小（字节），目录为 0
+    pub size: u64,
+    /// 最后修改时间（RFC3339），无法获取时为 null
+    pub modified: Option<String>,
 }
 
 /// 流信息（从 streamget-rs 解析后返回）
@@ -337,6 +355,12 @@ pub struct AppSettings {
     /// 用于解析需要登录才能获取高画质的直播间流
     #[serde(default)]
     pub cookies_by_platform: HashMap<String, String>,
+    /// 录制失败最大重试次数（0=不重试）
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    /// 重试退避基础秒数（第 n 次重试等待 retry_delay_seconds * n 秒）
+    #[serde(default = "default_retry_delay")]
+    pub retry_delay_seconds: u64,
 }
 
 fn default_output_dir() -> String {
@@ -353,6 +377,14 @@ fn default_true() -> bool {
 
 fn default_conversion_format() -> OutputFormat {
     OutputFormat::MP4
+}
+
+fn default_max_retries() -> u32 {
+    3
+}
+
+fn default_retry_delay() -> u64 {
+    10
 }
 
 /// 获取默认下载目录
@@ -381,6 +413,8 @@ impl Default for AppSettings {
             conversion_format: OutputFormat::MP4,
             delete_original_after_conversion: true,
             cookies_by_platform: HashMap::new(),
+            max_retries: 3,
+            retry_delay_seconds: 10,
         }
     }
 }

@@ -119,6 +119,23 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
           </Form.Item>
         </Card>
 
+        <Card type="inner" title="失败重试" style={{ marginBottom: 16 }}>
+          <Form.Item
+            label="最大重试次数"
+            name="max_retries"
+            tooltip="录制因网络/FFmpeg 等瞬时错误失败时自动重试，0 表示不重试。主播下播、用户停止、磁盘满不触发重试"
+          >
+            <InputNumber min={0} max={10} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            label="重试退避（秒）"
+            name="retry_delay_seconds"
+            tooltip="第 n 次重试前等待 retry_delay_seconds × n 秒，避免频繁重试"
+          >
+            <InputNumber min={1} max={120} style={{ width: "100%" }} />
+          </Form.Item>
+        </Card>
+
         <Card type="inner" title="格式转换" style={{ marginBottom: 16 }}>
           <Form.Item
             label="启用录制后格式转换"

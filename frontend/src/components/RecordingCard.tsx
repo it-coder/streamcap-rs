@@ -165,6 +165,12 @@ export function RecordingCard({
         </div>
       )}
 
+      {recording.is_recording && recording.retry_count > 0 && (
+        <div style={{ color: "#D97706", fontSize: 12, marginBottom: 8 }}>
+          🔄 录制失败，第 {recording.retry_count} 次重试中...
+        </div>
+      )}
+
       <Space wrap>
         {recording.monitor_enabled ? (
           <Button

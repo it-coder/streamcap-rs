@@ -4,7 +4,7 @@
 // - 桌面客户端模式 (window.__TAURI__ 存在) → TauriApiProvider (invoke + listen)
 // - B/S 服务器模式 (浏览器) → HttpApiProvider (fetch + WebSocket)
 
-import type { RecordingConfig, AppSettings, VideoQuality, ShutdownPayload, RecordingProgress } from "../types";
+import type { RecordingConfig, AppSettings, VideoQuality, ShutdownPayload, RecordingProgress, AppVersion, FileEntry } from "../types";
 
 export type { ShutdownPayload } from "../types";
 
@@ -29,14 +29,21 @@ export interface ApiProvider {
   updateSettings(settings: AppSettings): Promise<void>;
   checkFfmpeg(): Promise<string>;
 
+  // 应用元信息
+  getVersion(): Promise<AppVersion>;
+
+  // 文件浏览
+  listFiles(dir?: string): Promise<FileEntry[]>;
+  openFile(path: string): Promise<void>;
+
   // 事件订阅 — 返回取消订阅函数
   onStatusChange(callback: (status: RecordingConfig) => void): Promise<() => void>;
   onProgressChange(callback: (progress: RecordingProgress) => void): Promise<() => void>;
   onShutdown(callback: (payload: ShutdownPayload) => void): Promise<() => void>;
 }
 
-// 自动检测运行环境
-const isTauri =
+// 是否为桌面（Tauri）模式
+export const isTauri =
   typeof window !== "undefined" && "__TAURI__" in window;
 
 // 动态选择 Provider — 避免在浏览器模式下载入 Tauri API

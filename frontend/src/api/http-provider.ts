@@ -10,6 +10,8 @@ import type {
   VideoQuality,
   ShutdownPayload,
   RecordingProgress,
+  AppVersion,
+  FileEntry,
 } from "../types";
 
 export class HttpApiProvider implements ApiProvider {
@@ -134,6 +136,41 @@ export class HttpApiProvider implements ApiProvider {
       return data.version || "unknown";
     }
     throw new Error(data.error || "FFmpeg not available");
+  }
+
+  // ========================================
+  // 应用元信息 & 文件浏览
+  // ========================================
+
+  async getVersion(): Promise<AppVersion> {
+    return this.fetchJson<AppVersion>("/api/version");
+  }
+
+  async listFiles(dir?: string): Promise<FileEntry[]> {
+    const q = dir ? `?dir=${encodeURIComponent(dir)}` : "";
+    const data = await this.fetchJson<{ entries: FileEntry[] }>(
+      `/api/files${q}`,
+    );
+    return data.entries;
+  }
+
+  async openFile(path: string): Promise<void> {
+    // B/S 模式：通过下载接口获取文件
+    const res = await fetch(
+      `/api/files/download?path=${encodeURIComponent(path)}`,
+    );
+    if (!res.ok) {
+      throw new Error(`下载失败: HTTP ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = path.split(/[\\/]/).pop() || "download";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   // ========================================

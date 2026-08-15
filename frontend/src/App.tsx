@@ -1,37 +1,50 @@
 // 应用主布局 — antd Layout + Sider 侧边栏导航
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Layout, Menu, Typography, Tag, theme } from "antd";
 import {
   UnorderedListOutlined,
   PlusOutlined,
   SettingOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { RecordingList } from "./pages/RecordingList";
 import { AddTask } from "./pages/AddTask";
 import { SettingsPage } from "./pages/SettingsPage";
+import { FilesPage } from "./pages/FilesPage";
 import { ShutdownOverlay } from "./components/ShutdownOverlay";
 import { useRecordings } from "./hooks/useRecordings";
 import { useSettings } from "./hooks/useSettings";
 import { useFfmpegStatus } from "./hooks/useFfmpegStatus";
+import { api } from "./api/provider";
 
 const { Sider, Content } = Layout;
 const { Title, Text } = Typography;
 
-type PageKey = "home" | "add" | "settings";
+type PageKey = "home" | "add" | "settings" | "files";
 
 const MENU_ITEMS = [
   { key: "home", icon: <UnorderedListOutlined />, label: "录制列表" },
   { key: "add", icon: <PlusOutlined />, label: "添加任务" },
+  { key: "files", icon: <FolderOpenOutlined />, label: "文件管理" },
   { key: "settings", icon: <SettingOutlined />, label: "设置" },
 ];
 
 function App() {
   const [currentPage, setCurrentPage] = useState<PageKey>("home");
+  const [version, setVersion] = useState<string>("");
   const recordingsHook = useRecordings();
   const settingsHook = useSettings();
   const ffmpeg = useFfmpegStatus();
   const { token } = theme.useToken();
+
+  // 从后端获取版本号（单一可信源 = Cargo.toml）
+  useEffect(() => {
+    api
+      .getVersion()
+      .then((v) => setVersion(v.version))
+      .catch(() => setVersion(""));
+  }, []);
 
   const menuItems = [
     ...MENU_ITEMS,
@@ -67,7 +80,7 @@ function App() {
             🎬 StreamCap RS
           </Title>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            v0.1.0
+            {version ? `v${version}` : "加载中..."}
           </Text>
         </div>
         <Menu
@@ -75,7 +88,7 @@ function App() {
           selectedKeys={[currentPage]}
           items={menuItems}
           onClick={({ key }) => {
-            if (key === "home" || key === "add" || key === "settings") {
+            if (key === "home" || key === "add" || key === "settings" || key === "files") {
               setCurrentPage(key as PageKey);
             }
           }}
@@ -96,6 +109,7 @@ function App() {
             onSuccess={() => setCurrentPage("home")}
           />
         )}
+        {currentPage === "files" && <FilesPage />}
         {currentPage === "settings" && (
           <SettingsPage
             settings={settingsHook.settings}

@@ -2,18 +2,21 @@
 //!
 //! 与 Tauri commands 一一对应，委托给共享的 AppState / RecordingManager。
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::{
-    extract::{Path, State},
+    body::Body,
+    extract::{Path, Query, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{IntoResponse, Response},
     Json,
 };
 use serde::Deserialize;
 use serde_json::json;
+use tokio_util::io::ReaderStream;
 
-use crate::models::{RecordingConfig, AppSettings};
+use crate::models::{AppSettings, FileEntry, RecordingConfig};
 use crate::recording::ffmpeg;
 use crate::server::ServerState;
 use crate::stream::resolver;
@@ -85,6 +88,7 @@ pub async fn add_recording(
         recording_started_at: None,
         error_message: None,
         segment_count: 0,
+        retry_count: 0,
     };
 
     // 块作用域确保锁守卫在 .await 前释放（否则 future 非 Send）
@@ -259,4 +263,151 @@ pub async fn check_ffmpeg() -> Result<Json<serde_json::Value>, ApiError> {
         Ok(version) => Ok(Json(json!({ "available": true, "version": version }))),
         Err(e) => Ok(Json(json!({ "available": false, "error": e }))),
     }
+}
+
+/// GET /api/version — 获取应用版本号（单一可信源 = Cargo.toml version）
+pub async fn get_version() -> impl IntoResponse {
+    Json(json!({ "version": env!("CARGO_PKG_VERSION") }))
+}
+
+/// 文件列表查询参数
+#[derive(Deserialize)]
+pub struct FileListQuery {
+    pub dir: Option<String>,
+}
+
+/// 文件下载查询参数
+#[derive(Deserialize)]
+pub struct FileDownloadQuery {
+    pub path: String,
+}
+
+/// 将路径规范化为绝对规范路径
+fn canonicalize_path(path: &Path) -> Result<PathBuf, ApiError> {
+    path.canonicalize()
+        .map_err(|e| ApiError(format!("路径无效 {}: {}", path.display(), e)))
+}
+
+/// RFC 3986 非保留字符之外的字节做百分号编码（用于 Content-Disposition 文件名）
+fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+/// GET /api/files?dir=<path> — 列出目录内容（沙箱限制在 output_dir 内，防目录遍历）
+pub async fn list_files(
+    State(state): State<Arc<ServerState>>,
+    Query(query): Query<FileListQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let root = {
+        let settings = state.app_state.settings.read();
+        PathBuf::from(&settings.output_dir)
+    };
+    let root_abs = canonicalize_path(&root)?;
+
+    let dir = match &query.dir {
+        Some(d) => PathBuf::from(d),
+        None => root.clone(),
+    };
+    let dir_abs = canonicalize_path(&dir)?;
+
+    // 沙箱校验：仅允许访问 output_dir 子树
+    if !dir_abs.starts_with(&root_abs) {
+        return Err(ApiError("越权访问：仅允许浏览输出目录内的文件".into()));
+    }
+
+    let mut entries: Vec<FileEntry> = Vec::new();
+    let mut reader = tokio::fs::read_dir(&dir_abs)
+        .await
+        .map_err(|e| ApiError(format!("读取目录失败: {}", e)))?;
+
+    while let Some(entry) = reader
+        .next_entry()
+        .await
+        .map_err(|e| ApiError(format!("读取目录失败: {}", e)))?
+    {
+        let meta = entry
+            .metadata()
+            .await
+            .map_err(|e| ApiError(format!("读取文件信息失败: {}", e)))?;
+        let is_dir = meta.is_dir();
+        let name = entry.file_name().to_string_lossy().to_string();
+        let path = entry.path();
+        let size = if is_dir { 0 } else { meta.len() };
+        let modified = meta.modified().ok().map(|t| {
+            chrono::DateTime::<chrono::Local>::from(t).to_rfc3339()
+        });
+        entries.push(FileEntry {
+            name,
+            path: path.to_string_lossy().to_string(),
+            is_dir,
+            size,
+            modified,
+        });
+    }
+
+    // 排序：目录在前，再按名称
+    entries.sort_by(|a, b| {
+        if a.is_dir != b.is_dir {
+            return b.is_dir.cmp(&a.is_dir);
+        }
+        a.name.cmp(&b.name)
+    });
+
+    // 父目录（仅当仍在沙箱内）
+    let parent = dir_abs
+        .parent()
+        .filter(|p| p.starts_with(&root_abs))
+        .map(|p| p.to_string_lossy().to_string());
+
+    Ok(Json(json!({
+        "dir": dir_abs.to_string_lossy(),
+        "parent": parent,
+        "entries": entries,
+    })))
+}
+
+/// GET /api/files/download?path=<path> — 下载文件（流式，沙箱限制在 output_dir 内）
+pub async fn download_file(
+    State(state): State<Arc<ServerState>>,
+    Query(query): Query<FileDownloadQuery>,
+) -> Result<Response, ApiError> {
+    let root = {
+        let settings = state.app_state.settings.read();
+        PathBuf::from(&settings.output_dir)
+    };
+    let root_abs = canonicalize_path(&root)?;
+    let path_abs = canonicalize_path(&PathBuf::from(&query.path))?;
+
+    if path_abs.is_dir() || !path_abs.starts_with(&root_abs) {
+        return Err(ApiError("非法下载路径：仅允许下载输出目录内的文件".into()));
+    }
+
+    let file = tokio::fs::File::open(&path_abs)
+        .await
+        .map_err(|e| ApiError(format!("打开文件失败: {}", e)))?;
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+    let filename = path_abs
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "download".to_string());
+    let encoded = percent_encode(&filename);
+
+    Response::builder()
+        .header("Content-Type", "application/octet-stream")
+        .header(
+            "Content-Disposition",
+            format!("attachment; filename*=UTF-8''{}", encoded),
+        )
+        .body(body)
+        .map_err(|e| ApiError(format!("构建响应失败: {}", e)))
 }

@@ -12,7 +12,8 @@ export type RecordingStatus =
   | "stopped"
   | "offline"
   | "error"
-  | "not_scheduled";
+  | "not_scheduled"
+  | "retrying";
 
 export interface TimeRange {
   start: string; // "HH:MM"
@@ -39,6 +40,7 @@ export interface RecordingConfig {
   recording_started_at: string | null;
   error_message: string | null;
   segment_count: number;
+  retry_count: number;
 }
 
 export interface AppSettings {
@@ -58,6 +60,8 @@ export interface AppSettings {
   conversion_format: OutputFormat;
   delete_original_after_conversion: boolean;
   cookies_by_platform: Record<string, string>;
+  max_retries: number;
+  retry_delay_seconds: number;
 }
 
 export interface RecordingProgress {
@@ -72,6 +76,20 @@ export interface ShutdownPayload {
   stage: "start" | "done";
   activeCount: number;
   message: string;
+}
+
+// 应用版本信息（来自后端 get_version）
+export interface AppVersion {
+  version: string;
+}
+
+// 文件条目（来自后端 list_files）
+export interface FileEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified: string | null;
 }
 
 // 视频质量选项（供 Select 使用）
