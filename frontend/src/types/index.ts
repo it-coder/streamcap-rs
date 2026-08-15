@@ -154,6 +154,7 @@ export const FORMAT_OPTIONS: { value: OutputFormat; label: string }[] = [
   { value: "mp4", label: "MP4" },
   { value: "mkv", label: "MKV" },
   { value: "flv", label: "FLV" },
+  { value: "mov", label: "MOV" },
 ];
 
 // 平台检测规则（供 URL 输入时自动识别）

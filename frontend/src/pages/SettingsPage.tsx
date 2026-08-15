@@ -13,23 +13,13 @@ import {
   Spin,
 } from "antd";
 import type { AppSettings } from "../types";
-import { FORMAT_OPTIONS } from "../types";
+import { FORMAT_OPTIONS, QUALITY_OPTIONS, PLATFORM_PATTERNS } from "../types";
 import { useI18n } from "../i18n";
 
 const { TextArea } = Input;
 
-/** 平台列表（key 对应后端 detect_platform 返回的标识） */
-const COOKIE_PLATFORMS = [
-  { key: "douyin", label: "抖音" },
-  { key: "bilibili", label: "哔哩哔哩" },
-  { key: "huya", label: "虎牙" },
-  { key: "kuaishou", label: "快手" },
-  { key: "douyu", label: "斗鱼" },
-  { key: "twitch", label: "Twitch" },
-  { key: "youtube", label: "YouTube" },
-  { key: "tiktok", label: "TikTok" },
-  { key: "rednote", label: "小红书" },
-];
+/** 需要配置 Cookie 的平台 key（与后端 detect_platform 对应，label 走 i18n platform.*） */
+const COOKIE_PLATFORM_KEYS = PLATFORM_PATTERNS.map((p) => p.key);
 
 interface Props {
   settings: AppSettings | null;
@@ -41,6 +31,7 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
   const { t } = useI18n();
   const [form] = Form.useForm<AppSettings>();
   const enableConversion = Form.useWatch("enable_conversion", form);
+  const enableProxy = Form.useWatch("enable_proxy", form);
 
   useEffect(() => {
     if (settings) {
@@ -50,7 +41,10 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
 
   const handleSubmit = async (values: AppSettings) => {
     try {
-      await onSave(values);
+      // 合并原始设置：表单只回传已注册字段，未注册的字段（如 default_format）
+      // 若不合并会被后端默认值覆盖而静默丢失
+      const merged: AppSettings = { ...(settings as AppSettings), ...values };
+      await onSave(merged);
       message.success(t("settings.saved"));
     } catch (e) {
       message.error(t("settings.saveFail", { error: String(e) }));
@@ -96,6 +90,29 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
         >
           <InputNumber min={0} style={{ width: "100%" }} />
         </Form.Item>
+
+        <Card type="inner" title={t("settings.defaults")} style={{ marginBottom: 16 }}>
+          <Form.Item label={t("settings.defaultQuality")} name="default_quality">
+            <Select
+              options={QUALITY_OPTIONS.map((q) => ({
+                value: q.value,
+                label: t(`quality.${q.value}`),
+              }))}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.defaultFormat")}
+            name="default_format"
+            tooltip={t("settings.defaultFormatTooltip")}
+          >
+            <Select
+              options={FORMAT_OPTIONS.map((f) => ({
+                value: f.value,
+                label: t(`format.${f.value}`),
+              }))}
+            />
+          </Form.Item>
+        </Card>
 
         <Card type="inner" title={t("settings.dirStructure")} style={{ marginBottom: 16 }}>
           <Form.Item label={t("settings.byPlatform")} name="folder_by_platform" valuePropName="checked">
@@ -176,7 +193,10 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
             <Switch />
           </Form.Item>
           <Form.Item label={t("settings.proxyUrl")} name="proxy_url">
-            <Input placeholder={t("settings.proxyUrlPlaceholder")} />
+            <Input
+              placeholder={t("settings.proxyUrlPlaceholder")}
+              disabled={!enableProxy}
+            />
           </Form.Item>
         </Card>
 
@@ -196,26 +216,22 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
           style={{ marginBottom: 16 }}
           extra={t("settings.cookieHint")}
         >
-          {COOKIE_PLATFORMS.map((p) => (
+          {COOKIE_PLATFORM_KEYS.map((key) => (
             <Form.Item
-              key={p.key}
-              label={t(`platform.${p.key}`)}
-              name={["cookies_by_platform", p.key]}
+              key={key}
+              label={t(`platform.${key}`)}
+              name={["cookies_by_platform", key]}
             >
               <TextArea
                 rows={2}
                 placeholder={t("settings.cookiePlaceholder", {
-                  label: t(`platform.${p.key}`),
+                  label: t(`platform.${key}`),
                 })}
                 autoSize={{ minRows: 1, maxRows: 3 }}
               />
             </Form.Item>
           ))}
         </Card>
-
-        <Form.Item label={t("settings.defaultQuality")} name="default_quality">
-          <Input placeholder="OD" disabled />
-        </Form.Item>
 
         <Form.Item>
           <Button type="primary" htmlType="submit" block>

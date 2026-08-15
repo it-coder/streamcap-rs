@@ -18,6 +18,7 @@ pub async fn update_settings(
     state: State<'_, Arc<AppState>>,
     settings: AppSettings,
 ) -> Result<(), String> {
+    settings.validate().map_err(|e| format!("设置校验失败: {e}"))?;
     *state.settings.write() = settings;
     state
         .save_settings()

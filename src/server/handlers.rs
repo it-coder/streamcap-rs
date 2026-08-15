@@ -256,6 +256,9 @@ pub async fn update_settings(
     State(state): State<Arc<ServerState>>,
     Json(settings): Json<AppSettings>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    settings
+        .validate()
+        .map_err(|e| ApiError(format!("设置校验失败: {e}")))?;
     *state.app_state.settings.write() = settings;
     state
         .app_state

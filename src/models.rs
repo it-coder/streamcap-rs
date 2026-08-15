@@ -543,3 +543,71 @@ impl Default for AppSettings {
         }
     }
 }
+
+impl AppSettings {
+    /// 校验设置合法性。返回 Err(原因) 表示非法；Ok(()) 表示通过。
+    /// 后端在保存前调用，避免把明显错误的配置写盘。
+    pub fn validate(&self) -> Result<(), String> {
+        // 输出目录必须非空（后续录制依赖它，空目录会静默失败）
+        if self.output_dir.trim().is_empty() {
+            return Err("输出目录不能为空".to_string());
+        }
+
+        // 检测间隔：不能为 0（过于频繁可能触发平台封禁），上限 1 小时
+        if self.loop_interval_seconds == 0 || self.loop_interval_seconds > 3600 {
+            return Err("检测间隔需在 1-3600 秒之间".to_string());
+        }
+
+        // 磁盘阈值：0 表示不限制，上限给一个宽松上限避免误填
+        if self.recording_space_threshold_gb > 10_000_000 {
+            return Err("磁盘空间阈值过大（上限 10000000 GB）".to_string());
+        }
+
+        // 分段时长：0 表示不分段，上限 24 小时
+        if self.segment_duration_seconds > 86400 {
+            return Err("分段时长不能超过 86400 秒（24 小时）".to_string());
+        }
+
+        // 重试次数 / 退避：合理范围
+        if self.max_retries > 50 {
+            return Err("最大重试次数不能超过 50".to_string());
+        }
+        if self.retry_delay_seconds == 0 || self.retry_delay_seconds > 3600 {
+            return Err("重试退避需在 1-3600 秒之间".to_string());
+        }
+
+        // 代理：启用时必须填写且为合法 URL（带协议头）
+        if self.enable_proxy {
+            match &self.proxy_url {
+                Some(u) if !u.trim().is_empty() => {
+                    if !has_url_scheme(u) {
+                        return Err("代理地址需包含协议头，如 http:// 或 socks5://".to_string());
+                    }
+                }
+                _ => {
+                    return Err("启用代理时必须填写代理地址".to_string());
+                }
+            }
+        }
+
+        // Webhook：填写时必须为空合法的 http(s) 地址
+        if let Some(u) = &self.webhook_url {
+            if !u.trim().is_empty() && !is_http_url(u) {
+                return Err("Webhook 地址必须是 http(s) URL".to_string());
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// 是否包含 URL 协议头（xxx://）
+fn has_url_scheme(s: &str) -> bool {
+    s.trim().contains("://")
+}
+
+/// 是否为 http(s) URL
+fn is_http_url(s: &str) -> bool {
+    let t = s.trim().to_ascii_lowercase();
+    t.starts_with("http://") || t.starts_with("https://")
+}
