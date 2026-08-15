@@ -12,7 +12,7 @@ use axum::extract::State;
 use axum::response::IntoResponse;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
-use tracing::{error, info};
+use tracing::info;
 
 use crate::server::ServerState;
 

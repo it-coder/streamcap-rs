@@ -2,7 +2,7 @@
 //!
 //! 与 Tauri commands 一一对应，委托给共享的 AppState / RecordingManager。
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
@@ -283,7 +283,7 @@ pub struct FileDownloadQuery {
 }
 
 /// 将路径规范化为绝对规范路径
-fn canonicalize_path(path: &Path) -> Result<PathBuf, ApiError> {
+fn canonicalize_path(path: &PathBuf) -> Result<PathBuf, ApiError> {
     path.canonicalize()
         .map_err(|e| ApiError(format!("路径无效 {}: {}", path.display(), e)))
 }
