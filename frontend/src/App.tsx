@@ -16,6 +16,7 @@ import {
   SettingOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
+  HistoryOutlined,
 } from "@ant-design/icons";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
@@ -23,6 +24,7 @@ import { RecordingList } from "./pages/RecordingList";
 import { AddTask } from "./pages/AddTask";
 import { SettingsPage } from "./pages/SettingsPage";
 import { FilesPage } from "./pages/FilesPage";
+import { HistoryPage } from "./pages/HistoryPage";
 import { ShutdownOverlay } from "./components/ShutdownOverlay";
 import { useRecordings } from "./hooks/useRecordings";
 import { useSettings } from "./hooks/useSettings";
@@ -33,7 +35,7 @@ import { LanguageProvider, useI18n, type Lang } from "./i18n";
 const { Sider, Content } = Layout;
 const { Title, Text } = Typography;
 
-type PageKey = "home" | "add" | "settings" | "files";
+type PageKey = "home" | "add" | "settings" | "files" | "history";
 
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<PageKey>("home");
@@ -56,6 +58,7 @@ function AppContent() {
     { key: "home", icon: <UnorderedListOutlined />, label: t("nav.recordingList") },
     { key: "add", icon: <PlusOutlined />, label: t("nav.addTask") },
     { key: "files", icon: <FolderOpenOutlined />, label: t("nav.files") },
+    { key: "history", icon: <HistoryOutlined />, label: t("nav.history") },
     { key: "settings", icon: <SettingOutlined />, label: t("nav.settings") },
     {
       key: "ffmpeg-status",
@@ -117,7 +120,8 @@ function AppContent() {
                 key === "home" ||
                 key === "add" ||
                 key === "settings" ||
-                key === "files"
+                key === "files" ||
+                key === "history"
               ) {
                 setCurrentPage(key as PageKey);
               }
@@ -140,6 +144,7 @@ function AppContent() {
             />
           )}
           {currentPage === "files" && <FilesPage />}
+          {currentPage === "history" && <HistoryPage />}
           {currentPage === "settings" && (
             <SettingsPage
               settings={settingsHook.settings}

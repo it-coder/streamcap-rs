@@ -4,7 +4,7 @@
 // - 桌面客户端模式 (window.__TAURI__ 存在) → TauriApiProvider (invoke + listen)
 // - B/S 服务器模式 (浏览器) → HttpApiProvider (fetch + WebSocket)
 
-import type { RecordingConfig, AppSettings, VideoQuality, ShutdownPayload, RecordingProgress, AppVersion, FileEntry } from "../types";
+import type { RecordingConfig, AppSettings, VideoQuality, ShutdownPayload, RecordingProgress, AppVersion, FileEntry, RecordingHistoryEntry, PostProcessJob, PostProcessRequest } from "../types";
 
 export type { ShutdownPayload } from "../types";
 
@@ -38,10 +38,21 @@ export interface ApiProvider {
   // 返回可直接用于 <img>/<video> src 的缩略图地址（server 模式返回 URL，desktop 模式返回 data URL）
   getThumbnail(path: string): Promise<string>;
 
+  // 录制历史
+  listHistory(): Promise<RecordingHistoryEntry[]>;
+  deleteHistory(id: string, deleteFile?: boolean): Promise<void>;
+  // 返回可直接用于 <video> 播放的 URL（server 模式返回内联流地址；desktop 模式返回 null，应改用 openFile 外部播放）
+  getPlaybackUrl(path: string): string | null;
+
+  // 后处理任务
+  startPostProcess(req: PostProcessRequest): Promise<PostProcessJob>;
+  getPostProcess(id: string): Promise<PostProcessJob | null>;
+
   // 事件订阅 — 返回取消订阅函数
   onStatusChange(callback: (status: RecordingConfig) => void): Promise<() => void>;
   onProgressChange(callback: (progress: RecordingProgress) => void): Promise<() => void>;
   onShutdown(callback: (payload: ShutdownPayload) => void): Promise<() => void>;
+  onJobProgress(callback: (job: PostProcessJob) => void): Promise<() => void>;
 }
 
 // 是否为桌面（Tauri）模式

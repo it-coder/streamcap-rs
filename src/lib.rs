@@ -11,6 +11,8 @@ pub mod stream;
 pub mod recording;
 pub mod broadcaster;
 pub mod disk;
+pub mod notifier;
+pub mod jobs;
 
 #[cfg(feature = "desktop")]
 pub mod commands;

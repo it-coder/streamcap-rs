@@ -1,14 +1,19 @@
 //! 配置管理 — 设置持久化、录制任务存储
 
-use crate::models::{AppSettings, RecordingConfig};
+use crate::models::{AppSettings, PostProcessJob, RecordingConfig, RecordingHistoryEntry};
 use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// 应���全局状态
+/// 应用全局状态
 pub struct AppState {
     pub settings: RwLock<AppSettings>,
     pub recordings: RwLock<Vec<RecordingConfig>>,
+    /// 录制历史（持久化到 history.json）
+    pub history: RwLock<Vec<RecordingHistoryEntry>>,
+    /// 后处理任务（内存态，无需持久化）
+    pub jobs: RwLock<HashMap<String, PostProcessJob>>,
     pub data_dir: PathBuf,
 }
 
@@ -37,6 +42,8 @@ impl AppState {
         Arc::new(Self {
             settings: RwLock::new(settings),
             recordings: RwLock::new(recordings),
+            history: RwLock::new(Self::load_history(&data_dir)),
+            jobs: RwLock::new(HashMap::new()),
             data_dir,
         })
     }
@@ -47,6 +54,10 @@ impl AppState {
 
     fn recordings_path(data_dir: &PathBuf) -> PathBuf {
         data_dir.join("recordings.json")
+    }
+
+    fn history_path(data_dir: &PathBuf) -> PathBuf {
+        data_dir.join("history.json")
     }
 
     pub fn load_settings(data_dir: &PathBuf) -> AppSettings {
@@ -100,6 +111,66 @@ impl AppState {
         };
 
         let path = Self::recordings_path(&self.data_dir);
+        let tmp_path = path.with_extension("json.tmp");
+        tokio::fs::write(&tmp_path, json)
+            .await
+            .map_err(|e| e.to_string())?;
+        tokio::fs::rename(&tmp_path, &path)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    // ========================================
+    // 录制历史
+    // ========================================
+
+    pub fn load_history(data_dir: &PathBuf) -> Vec<RecordingHistoryEntry> {
+        let path = Self::history_path(data_dir);
+        if path.exists() {
+            std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// 追加一条历史记录并持久化（最新的排在最前）
+    pub async fn add_history_entry(&self, entry: RecordingHistoryEntry) -> Result<(), String> {
+        {
+            let mut history = self.history.write();
+            history.insert(0, entry);
+        }
+        self.save_history().await
+    }
+
+    /// 删除一条历史记录（并可选删除其关联文件）
+    pub async fn remove_history_entry(
+        &self,
+        id: &str,
+        delete_file: bool,
+    ) -> Result<Option<RecordingHistoryEntry>, String> {
+        let removed = {
+            let mut history = self.history.write();
+            let pos = history.iter().position(|h| h.id == id);
+            pos.map(|i| history.remove(i))
+        };
+        if let (Some(entry), true) = (&removed, delete_file) {
+            if let Some(path) = &entry.file_path {
+                let _ = std::fs::remove_file(path);
+            }
+        }
+        self.save_history().await.map(|_| removed)
+    }
+
+    pub async fn save_history(&self) -> Result<(), String> {
+        let json = {
+            let history = self.history.read();
+            serde_json::to_string_pretty(&*history).map_err(|e| e.to_string())?
+        };
+        let path = Self::history_path(&self.data_dir);
         let tmp_path = path.with_extension("json.tmp");
         tokio::fs::write(&tmp_path, json)
             .await

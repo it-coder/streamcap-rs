@@ -88,6 +88,10 @@ fn main() {
             commands::files::list_files,
             commands::files::open_file,
             commands::files::read_file_base64,
+            commands::history::list_history,
+            commands::history::delete_history,
+            commands::postprocess::start_postprocess,
+            commands::postprocess::get_postprocess,
         ])
         .run(tauri::generate_context!())
         .expect("error while running streamcap-rs");

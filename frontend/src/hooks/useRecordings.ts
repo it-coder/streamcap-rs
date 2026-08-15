@@ -3,8 +3,10 @@
 // 通过 ApiProvider 抽象层订阅后端推送的状态变更事件，
 // 当后端轮询检测到开播、录制开始/结束等状态变更时，自动更新前端列表。
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { message } from "antd";
 import { api } from "../api/provider";
+import { useI18n } from "../i18n";
 import type { RecordingConfig, VideoQuality, RecordingProgress, TimeRange } from "../types";
 
 export type UseRecordingsResult = {
@@ -20,9 +22,12 @@ export type UseRecordingsResult = {
 };
 
 export function useRecordings() {
+  const { t } = useI18n();
   const [recordings, setRecordings] = useState<RecordingConfig[]>([]);
   const [progressMap, setProgressMap] = useState<Record<string, RecordingProgress>>({});
   const [loading, setLoading] = useState(true);
+  // 记录每个录制任务上一次的状态，用于检测「开始 / 完成 / 失败」跳变并弹出 toast
+  const prevState = useRef<Record<string, { is_recording: boolean }>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -58,6 +63,29 @@ export function useRecordings() {
     api
       .onStatusChange((updated) => {
         if (cancelled) return;
+
+        // 站内通知：检测 开始 / 完成 / 失败 跳变
+        const prev = prevState.current[updated.id];
+        const name =
+          updated.anchor_name || updated.title || t("card.unknownPlatform");
+        if (prev) {
+          if (!prev.is_recording && updated.is_recording) {
+            message.info(t("notify.recordingStarted", { name }));
+          } else if (prev.is_recording && !updated.is_recording) {
+            if (updated.error_message) {
+              message.error(
+                t("notify.recordingFailed", { name }) +
+                  `: ${updated.error_message}`
+              );
+            } else {
+              message.success(t("notify.recordingDone", { name }));
+            }
+          }
+        }
+        prevState.current[updated.id] = {
+          is_recording: updated.is_recording,
+        };
+
         setRecordings((prev) =>
           prev.map((r) => (r.id === updated.id ? updated : r))
         );

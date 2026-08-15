@@ -281,6 +281,124 @@ pub struct FileEntry {
     pub modified: Option<String>,
 }
 
+/// 录制历史状态
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum HistoryStatus {
+    /// 录制成功完成
+    #[serde(rename = "completed")]
+    Completed,
+    /// 录制失败
+    #[serde(rename = "failed")]
+    Failed,
+    /// 用户取消/未实际产出文件
+    #[serde(rename = "cancelled")]
+    Cancelled,
+}
+
+impl HistoryStatus {
+    pub fn label(&self) -> &str {
+        match self {
+            HistoryStatus::Completed => "完成",
+            HistoryStatus::Failed => "失败",
+            HistoryStatus::Cancelled => "已取消",
+        }
+    }
+}
+
+/// 录制历史条目（录制结束后持久化，供「录制历史」页查看与回放）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingHistoryEntry {
+    /// 历史条目唯一标识
+    pub id: String,
+    /// 原始录制任务 ID
+    pub recording_id: String,
+    /// 直播间 URL
+    pub url: String,
+    /// 平台标识
+    pub platform: String,
+    /// 主播名称
+    pub anchor_name: String,
+    /// 直播标题
+    pub title: String,
+    /// 录制结果状态
+    pub status: HistoryStatus,
+    /// 开始时间
+    pub started_at: DateTime<Utc>,
+    /// 结束时间
+    pub ended_at: DateTime<Utc>,
+    /// 录制时长（秒）
+    pub duration_seconds: u64,
+    /// 代表文件（最大的媒体文件，用于回放/下载）
+    pub file_path: Option<String>,
+    /// 该次录制产出文件总大小（字节）
+    pub file_size: u64,
+    /// 封面帧快照路径
+    #[serde(default)]
+    pub thumbnail: Option<String>,
+    /// 错误信息（失败时）
+    #[serde(default)]
+    pub error_message: Option<String>,
+    /// 创建时间
+    #[serde(default = "Utc::now")]
+    pub created_at: DateTime<Utc>,
+}
+
+/// 后处理任务状态
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum JobStatus {
+    #[serde(rename = "pending")]
+    Pending,
+    #[serde(rename = "running")]
+    Running,
+    #[serde(rename = "done")]
+    Done,
+    #[serde(rename = "failed")]
+    Failed,
+}
+
+/// 后处理任务（格式转换 / 提取音频 / 片段截取）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PostProcessJob {
+    /// 任务 ID
+    pub id: String,
+    /// 操作类型：convert | extract-audio | trim
+    pub kind: String,
+    /// 输入文件路径
+    pub input: String,
+    /// 输出文件路径（运行时填充）
+    #[serde(default)]
+    pub output: Option<String>,
+    /// 任务状态
+    pub status: JobStatus,
+    /// 进度 0-100
+    #[serde(default)]
+    pub progress: u8,
+    /// 错误信息
+    #[serde(default)]
+    pub error: Option<String>,
+    /// 创建时间
+    #[serde(default = "Utc::now")]
+    pub created_at: DateTime<Utc>,
+}
+
+/// 启动后处理任务的请求体
+#[derive(Debug, Clone, Deserialize)]
+pub struct PostProcessRequest {
+    /// 操作类型：convert | extract-audio | trim
+    pub kind: String,
+    /// 输入文件路径（位于输出目录内）
+    pub input: String,
+    /// convert 时的目标格式（mp4/ts/mkv/flv/mov）
+    #[serde(default)]
+    pub target_format: Option<String>,
+    /// trim 时的起始秒数
+    #[serde(default)]
+    pub start_seconds: Option<f64>,
+    /// trim 时的结束秒数（不填表示到结尾）
+    #[serde(default)]
+    pub end_seconds: Option<f64>,
+}
+
 /// 流信息（从 streamget-rs 解析后返回）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamInfo {
@@ -364,6 +482,9 @@ pub struct AppSettings {
     /// 重试退避基础秒数（第 n 次重试等待 retry_delay_seconds * n 秒）
     #[serde(default = "default_retry_delay")]
     pub retry_delay_seconds: u64,
+    /// 事件通知 Webhook URL（录制开始/完成/失败时 POST JSON；为空则不发送）
+    #[serde(default)]
+    pub webhook_url: Option<String>,
 }
 
 fn default_output_dir() -> String {
@@ -418,6 +539,7 @@ impl Default for AppSettings {
             cookies_by_platform: HashMap::new(),
             max_retries: 3,
             retry_delay_seconds: 10,
+            webhook_url: None,
         }
     }
 }

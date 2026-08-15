@@ -2,22 +2,28 @@
 //!
 //! 与 Tauri commands 一一对应，委托给共享的 AppState / RecordingManager。
 
+use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Json,
 };
 use serde::Deserialize;
 use serde_json::json;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
 use crate::disk;
-use crate::models::{AppSettings, FileEntry, RecordingConfig};
+use crate::jobs;
+use crate::models::{
+    AppSettings, FileEntry, PostProcessJob, PostProcessRequest, RecordingConfig,
+    RecordingHistoryEntry,
+};
 use crate::recording::ffmpeg;
 use crate::server::ServerState;
 use crate::stream::resolver;
@@ -293,6 +299,78 @@ pub async fn health(State(state): State<Arc<ServerState>>) -> impl IntoResponse 
     }))
 }
 
+// ========================================
+// 录制历史 API
+// ========================================
+
+/// GET /api/history — 获取录制历史（最新在前）
+pub async fn list_history(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    let history = state.app_state.history.read();
+    Json(history.clone())
+}
+
+/// GET /api/history/:id — 获取单条历史记录
+pub async fn get_history_entry(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+) -> Result<Json<RecordingHistoryEntry>, ApiError> {
+    let history = state.app_state.history.read();
+    match history.iter().find(|h| h.id == id) {
+        Some(entry) => Ok(Json(entry.clone())),
+        None => Err(ApiError(format!("历史记录 {} 不存在", id))),
+    }
+}
+
+/// DELETE /api/history/:id — 删除历史记录（?delete_file=true 同时删除关联文件）
+#[derive(Deserialize)]
+pub struct DeleteHistoryQuery {
+    pub delete_file: Option<bool>,
+}
+
+pub async fn delete_history_entry(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+    Query(query): Query<DeleteHistoryQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    state
+        .app_state
+        .remove_history_entry(&id, query.delete_file.unwrap_or(false))
+        .await
+        .map_err(|e| ApiError(format!("删除失败: {}", e)))?;
+    Ok(Json(json!({ "success": true })))
+}
+
+// ========================================
+// 后处理任务 API
+// ========================================
+
+/// POST /api/postprocess — 启动一个后处理任务
+pub async fn start_postprocess(
+    State(state): State<Arc<ServerState>>,
+    Json(req): Json<PostProcessRequest>,
+) -> Result<Json<PostProcessJob>, ApiError> {
+    let job = jobs::start_postprocess(
+        state.app_state.clone(),
+        Some(state.ws_broadcaster.clone()),
+        req,
+    )
+    .await
+    .map_err(ApiError)?;
+    Ok(Json(job))
+}
+
+/// GET /api/postprocess/:id — 查询后处理任务状态
+pub async fn get_postprocess(
+    State(state): State<Arc<ServerState>>,
+    Path(id): Path<String>,
+) -> Result<Json<PostProcessJob>, ApiError> {
+    let jobs = state.app_state.jobs.read();
+    match jobs.get(&id) {
+        Some(job) => Ok(Json(job.clone())),
+        None => Err(ApiError(format!("后处理任务 {} 不存在", id))),
+    }
+}
+
 /// 文件列表查询参数
 #[derive(Deserialize)]
 pub struct FileListQuery {
@@ -436,8 +514,11 @@ pub async fn download_file(
 }
 
 /// GET /api/files/raw?path=<path> — 内联返回文件（供 <img>/<video> 预览，沙箱限制在 output_dir 内）
+///
+/// 支持 HTTP Range 请求（206 Partial Content），使 <video> 可拖动进度条。
 pub async fn serve_file_inline(
     State(state): State<Arc<ServerState>>,
+    headers: HeaderMap,
     Query(query): Query<FileDownloadQuery>,
 ) -> Result<Response, ApiError> {
     let root = {
@@ -471,15 +552,68 @@ pub async fn serve_file_inline(
         _ => "application/octet-stream",
     };
 
-    let file = tokio::fs::File::open(&path_abs)
+    let mut file = tokio::fs::File::open(&path_abs)
         .await
         .map_err(|e| ApiError(format!("打开文件失败: {}", e)))?;
+    let total = file
+        .metadata()
+        .await
+        .map_err(|e| ApiError(format!("读取文件信息失败: {}", e)))?
+        .len();
+
+    // 解析 Range 请求头
+    let range_hdr = headers
+        .get(header::RANGE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| parse_range(s, total));
+
+    if let Some((start, end)) = range_hdr {
+        if start > end || start >= total {
+            return Err(ApiError("Range 请求不合法".into()));
+        }
+        file.seek(SeekFrom::Start(start))
+            .await
+            .map_err(|e| ApiError(format!("定位文件偏移失败: {}", e)))?;
+        let len = end - start + 1;
+        let stream = ReaderStream::new(file.take(len));
+        let body = Body::from_stream(stream);
+        return Response::builder()
+            .status(StatusCode::PARTIAL_CONTENT)
+            .header("Content-Type", content_type)
+            .header("Content-Range", format!("bytes {}-{}/{}", start, end, total))
+            .header("Accept-Ranges", "bytes")
+            .header("Content-Length", len)
+            .header("Content-Disposition", "inline")
+            .body(body)
+            .map_err(|e| ApiError(format!("构建响应失败: {}", e)));
+    }
+
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(stream);
 
     Response::builder()
         .header("Content-Type", content_type)
+        .header("Accept-Ranges", "bytes")
         .header("Content-Disposition", "inline")
         .body(body)
         .map_err(|e| ApiError(format!("构建响应失败: {}", e)))
+}
+
+/// 解析 HTTP Range 头（"bytes=start-end" / "bytes=-suffix"），返回含闭区间 [start, end]
+fn parse_range(range: &str, total: u64) -> Option<(u64, u64)> {
+    let range = range.trim();
+    let spec = range.strip_prefix("bytes=")?;
+    let (start_s, end_s) = spec.split_once('-')?;
+    let start = if start_s.is_empty() {
+        // 后缀范围：bytes=-N 取最后 N 字节
+        total.checked_sub(end_s.parse::<u64>().ok()?)?
+    } else {
+        start_s.parse::<u64>().ok()?
+    };
+    let end = if end_s.is_empty() {
+        total.saturating_sub(1)
+    } else {
+        end_s.parse::<u64>().ok()?
+    };
+    Some((start, end))
 }

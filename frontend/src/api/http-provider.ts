@@ -12,6 +12,9 @@ import type {
   RecordingProgress,
   AppVersion,
   FileEntry,
+  RecordingHistoryEntry,
+  PostProcessJob,
+  PostProcessRequest,
 } from "../types";
 
 export class HttpApiProvider implements ApiProvider {
@@ -20,6 +23,7 @@ export class HttpApiProvider implements ApiProvider {
   private statusCallbacks: Set<(status: RecordingConfig) => void> = new Set();
   private progressCallbacks: Set<(progress: RecordingProgress) => void> = new Set();
   private shutdownCallbacks: Set<(payload: ShutdownPayload) => void> = new Set();
+  private jobCallbacks: Set<(job: PostProcessJob) => void> = new Set();
 
   // ========================================
   // REST API 辅助方法
@@ -179,6 +183,39 @@ export class HttpApiProvider implements ApiProvider {
   }
 
   // ========================================
+  // 录制历史 & 后处理
+  // ========================================
+
+  async listHistory(): Promise<RecordingHistoryEntry[]> {
+    return this.fetchJson<RecordingHistoryEntry[]>("/api/history");
+  }
+
+  async deleteHistory(id: string, deleteFile = false): Promise<void> {
+    return this.fetchVoid(`/api/history/${id}?delete_file=${deleteFile}`, {
+      method: "DELETE",
+    });
+  }
+
+  getPlaybackUrl(path: string): string | null {
+    // server 模式：返回内联流地址（支持 Range，<video> 可拖动）
+    return `/api/files/raw?path=${encodeURIComponent(path)}`;
+  }
+
+  async startPostProcess(req: PostProcessRequest): Promise<PostProcessJob> {
+    return this.fetchJson<PostProcessJob>("/api/postprocess", {
+      method: "POST",
+      body: JSON.stringify(req),
+    });
+  }
+
+  async getPostProcess(id: string): Promise<PostProcessJob | null> {
+    const res = await fetch(`/api/postprocess/${id}`);
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  }
+
+  // ========================================
   // WebSocket 事件订阅
   // ========================================
 
@@ -210,6 +247,8 @@ export class HttpApiProvider implements ApiProvider {
             this.progressCallbacks.forEach((cb) => cb(msg.data));
           } else if (msg.type === "app:shutdown") {
             this.shutdownCallbacks.forEach((cb) => cb(msg.data));
+          } else if (msg.type === "job_progress") {
+            this.jobCallbacks.forEach((cb) => cb(msg.data));
           }
         } catch (e) {
           console.error("WebSocket message parse error:", e);
@@ -247,6 +286,16 @@ export class HttpApiProvider implements ApiProvider {
     this.shutdownCallbacks.add(callback);
     return () => {
       this.shutdownCallbacks.delete(callback);
+    };
+  }
+
+  async onJobProgress(
+    callback: (job: PostProcessJob) => void,
+  ): Promise<() => void> {
+    await this.ensureWs();
+    this.jobCallbacks.add(callback);
+    return () => {
+      this.jobCallbacks.delete(callback);
     };
   }
 }

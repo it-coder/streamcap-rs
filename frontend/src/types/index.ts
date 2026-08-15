@@ -63,6 +63,53 @@ export interface AppSettings {
   cookies_by_platform: Record<string, string>;
   max_retries: number;
   retry_delay_seconds: number;
+  webhook_url: string | null;
+}
+
+// 录制历史状态
+export type HistoryStatus = "completed" | "failed" | "cancelled";
+
+// 录制历史条目
+export interface RecordingHistoryEntry {
+  id: string;
+  recording_id: string;
+  url: string;
+  platform: string;
+  anchor_name: string;
+  title: string;
+  status: HistoryStatus;
+  started_at: string;
+  ended_at: string;
+  duration_seconds: number;
+  file_path: string | null;
+  file_size: number;
+  thumbnail: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+// 后处理任务状态
+export type JobStatus = "pending" | "running" | "done" | "failed";
+
+// 后处理任务
+export interface PostProcessJob {
+  id: string;
+  kind: string; // convert | extract-audio | trim
+  input: string;
+  output: string | null;
+  status: JobStatus;
+  progress: number;
+  error: string | null;
+  created_at: string;
+}
+
+// 启动后处理任务的请求
+export interface PostProcessRequest {
+  kind: string;
+  input: string;
+  target_format?: string;
+  start_seconds?: number;
+  end_seconds?: number;
 }
 
 export interface RecordingProgress {

@@ -5,7 +5,11 @@
 use crate::broadcaster::{EventBroadcaster, ShutdownPayload};
 use crate::config::AppState;
 use crate::disk;
-use crate::models::{RecordingConfig, RecordingProgress, RecordingStatus, StreamInfo, TimeRange};
+use crate::models::{
+    HistoryStatus, RecordingConfig, RecordingHistoryEntry, RecordingProgress, RecordingStatus,
+    StreamInfo, TimeRange,
+};
+use crate::notifier::{EVENT_COMPLETED, EVENT_FAILED, EVENT_STARTED};
 use crate::recording::ffmpeg::{self, FFmpegRecorder};
 use crate::stream::resolver;
 use chrono::{Local, Utc};
@@ -16,12 +20,12 @@ use std::time::Duration;
 use tokio::sync::{broadcast, watch, Mutex};
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
+use uuid::Uuid;
 
 /// 活跃录制任务跟踪
 struct ActiveRecording {
     stop_tx: watch::Sender<bool>,
     task_handle: JoinHandle<()>,
-    started_at: chrono::DateTime<Utc>,
 }
 
 /// 录制管理器（线程安全共享）
@@ -152,8 +156,17 @@ impl RecordingManager {
                 .cloned()
                 .unwrap()
         };
-        self.broadcast(updated_config);
+        self.broadcast(updated_config.clone());
         let _ = self.app_state.save_recordings().await;
+
+        // Webhook：录制开始通知（不阻塞主流程）
+        {
+            let hook_cfg = updated_config.clone();
+            let hook_app = self.app_state.clone();
+            tokio::spawn(async move {
+                crate::notifier::fire_webhook(hook_app, EVENT_STARTED, &hook_cfg).await;
+            });
+        }
 
         // 构建输出路径
         let output_dir = Self::build_output_dir(self.app_state.clone(), &config, &stream_info);
@@ -273,9 +286,25 @@ impl RecordingManager {
                 recordings.iter().find(|r| r.id == rid).cloned()
             };
             let _ = app_state.save_recordings().await;
-            if let Some(cfg) = updated {
+            if let Some(cfg) = updated.clone() {
                 let _ = status_tx.send(cfg.clone());
                 broadcaster.broadcast_status(&cfg);
+
+                // 写入录制历史（成功/失败均记录）
+                let history_entry = make_history_entry(&cfg, &final_result);
+                let _ = app_state.add_history_entry(history_entry).await;
+
+                // Webhook：录制完成 / 失败通知
+                let hook_app = app_state.clone();
+                let hook_event = if final_result.is_ok() {
+                    EVENT_COMPLETED
+                } else {
+                    EVENT_FAILED
+                };
+                let hook_cfg = cfg.clone();
+                tokio::spawn(async move {
+                    crate::notifier::fire_webhook(hook_app, hook_event, &hook_cfg).await;
+                });
             }
         });
 
@@ -285,7 +314,6 @@ impl RecordingManager {
             ActiveRecording {
                 stop_tx,
                 task_handle: handle,
-                started_at: Utc::now(),
             },
         );
         info!("直播中的: {:?}", recording_id.to_string());
@@ -789,4 +817,88 @@ async fn cancellable_sleep(stop_rx: &tokio::sync::watch::Receiver<bool>, total_s
         slept += step;
     }
     true
+}
+
+/// 扫描录制输出目录，返回（代表媒体文件, 总大小）
+///
+/// 代表文件取体积最大的媒体文件（用于回放/下载）；总大小为目录内所有文件之和。
+fn scan_recording_output(dir: &Option<String>) -> (Option<String>, u64) {
+    let dir = match dir {
+        Some(d) => PathBuf::from(d),
+        None => return (None, 0),
+    };
+    if !dir.is_dir() {
+        return (None, 0);
+    }
+    let media_exts = [
+        "mp4", "ts", "mkv", "flv", "mov", "webm", "avi", "m4a", "mp3",
+    ];
+    let mut total: u64 = 0;
+    let mut largest: Option<(u64, PathBuf)> = None;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            if meta.is_file() {
+                let size = meta.len();
+                total += size;
+                let ext = entry
+                    .path()
+                    .extension()
+                    .and_then(|x| x.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if media_exts.contains(&ext.as_str()) {
+                    let bigger = largest.as_ref().map(|(s, _)| size > *s).unwrap_or(true);
+                    if bigger {
+                        largest = Some((size, entry.path()));
+                    }
+                }
+            }
+        }
+    }
+    (
+        largest.map(|(_, p)| p.to_string_lossy().to_string()),
+        total,
+    )
+}
+
+/// 根据录制配置与最终结果构造一条历史记录
+fn make_history_entry(
+    config: &RecordingConfig,
+    final_result: &Result<(), String>,
+) -> RecordingHistoryEntry {
+    let now = Utc::now();
+    let started_at = config.recording_started_at.unwrap_or(now);
+    let duration = (now - started_at).num_seconds().max(0) as u64;
+    let (file_path, file_size) = scan_recording_output(&config.recording_dir);
+    let status = match final_result {
+        Ok(_) => HistoryStatus::Completed,
+        Err(_) => HistoryStatus::Failed,
+    };
+    RecordingHistoryEntry {
+        id: Uuid::new_v4().to_string(),
+        recording_id: config.id.clone(),
+        url: config.url.clone(),
+        platform: config.platform.clone(),
+        anchor_name: config.anchor_name.clone(),
+        title: config.title.clone(),
+        status,
+        started_at,
+        ended_at: now,
+        duration_seconds: duration,
+        file_path,
+        file_size,
+        thumbnail: config.thumbnail.clone(),
+        error_message: match final_result {
+            Ok(_) => None,
+            Err(e) => config
+                .error_message
+                .clone()
+                .or_else(|| Some(e.clone())),
+        },
+        created_at: now,
+    }
 }

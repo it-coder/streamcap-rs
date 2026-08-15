@@ -9,7 +9,6 @@ use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 
 pub struct DirectDownloader {
-    recording_id: String,
     stream_url: String,
     output_path: PathBuf,
     should_stop: bool,
@@ -19,14 +18,12 @@ pub struct DirectDownloader {
 
 impl DirectDownloader {
     pub fn new(
-        recording_id: &str,
         stream_url: &str,
         output_path: PathBuf,
         user_agent: &str,
         proxy_url: Option<&str>,
     ) -> Self {
         Self {
-            recording_id: recording_id.to_string(),
             stream_url: stream_url.to_string(),
             output_path,
             should_stop: false,

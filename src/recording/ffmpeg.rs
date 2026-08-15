@@ -444,3 +444,67 @@ pub async fn capture_thumbnail(input: &PathBuf, output: &PathBuf) -> Result<(), 
         Err(_) => Err("封面帧抓取超时".to_string()),
     }
 }
+
+/// 运行一条简单的 FFmpeg 命令（无实时进度），成功返回 Ok(())
+async fn run_ffmpeg(args: &[String]) -> Result<(), String> {
+    let status = Command::new("ffmpeg")
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map_err(|e| format!("FFmpeg 执行失败: {}", e))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("FFmpeg 退出码: {:?}", status.code()))
+    }
+}
+
+/// 后处理：提取音频为 MP3（使用 libmp3lame 重编码，兼容性最好）
+pub async fn extract_audio(input: &PathBuf, output: &PathBuf) -> Result<PathBuf, String> {
+    let args: Vec<String> = vec![
+        "-y".into(),
+        "-i".into(),
+        input.to_string_lossy().into(),
+        "-vn".into(),
+        "-acodec".into(),
+        "libmp3lame".into(),
+        "-q:a".into(),
+        "2".into(),
+        output.to_string_lossy().into(),
+    ];
+    run_ffmpeg(&args)
+        .await
+        .map(|_| output.clone())
+        .map_err(|e| format!("提取音频失败: {}", e))
+}
+
+/// 后处理：截取片段（流复制，无重编码）
+///
+/// `start` 为起始秒；`end` 为结束秒（None 表示截到结尾）。
+pub async fn trim(
+    input: &PathBuf,
+    output: &PathBuf,
+    start: f64,
+    end: Option<f64>,
+) -> Result<PathBuf, String> {
+    let mut args: Vec<String> = vec![
+        "-y".into(),
+        "-ss".into(),
+        format!("{:.3}", start),
+        "-i".into(),
+        input.to_string_lossy().into(),
+        "-c".into(),
+        "copy".into(),
+    ];
+    if let Some(end) = end {
+        args.push("-to".into());
+        args.push(format!("{:.3}", end));
+    }
+    args.push(output.to_string_lossy().into());
+    run_ffmpeg(&args)
+        .await
+        .map(|_| output.clone())
+        .map_err(|e| format!("片段截取失败: {}", e))
+}

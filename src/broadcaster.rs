@@ -3,7 +3,7 @@
 //! 桌面模式使用 TauriBroadcaster（emit Tauri 事件）
 //! 服务器模式使用 WsBroadcaster（tokio broadcast channel → WebSocket fan-out）
 
-use crate::models::{RecordingConfig, RecordingProgress};
+use crate::models::{PostProcessJob, RecordingConfig, RecordingProgress};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -61,6 +61,7 @@ pub struct WsBroadcaster {
     status_tx: tokio::sync::broadcast::Sender<RecordingConfig>,
     progress_tx: tokio::sync::broadcast::Sender<RecordingProgress>,
     shutdown_tx: tokio::sync::broadcast::Sender<ShutdownPayload>,
+    job_tx: tokio::sync::broadcast::Sender<PostProcessJob>,
 }
 
 impl WsBroadcaster {
@@ -68,10 +69,12 @@ impl WsBroadcaster {
         let (status_tx, _) = tokio::sync::broadcast::channel(100);
         let (progress_tx, _) = tokio::sync::broadcast::channel(100);
         let (shutdown_tx, _) = tokio::sync::broadcast::channel(16);
+        let (job_tx, _) = tokio::sync::broadcast::channel(32);
         Arc::new(Self {
             status_tx,
             progress_tx,
             shutdown_tx,
+            job_tx,
         })
     }
 
@@ -88,6 +91,16 @@ impl WsBroadcaster {
     /// 订阅关闭事件
     pub fn subscribe_shutdown(&self) -> tokio::sync::broadcast::Receiver<ShutdownPayload> {
         self.shutdown_tx.subscribe()
+    }
+
+    /// 订阅后处理任务进度事件
+    pub fn subscribe_job(&self) -> tokio::sync::broadcast::Receiver<PostProcessJob> {
+        self.job_tx.subscribe()
+    }
+
+    /// 广播后处理任务状态变更
+    pub fn broadcast_job(&self, job: &PostProcessJob) {
+        let _ = self.job_tx.send(job.clone());
     }
 }
 

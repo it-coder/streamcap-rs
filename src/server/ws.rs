@@ -34,6 +34,7 @@ async fn handle_ws_connection(socket: WebSocket, state: Arc<ServerState>) {
     let mut status_rx = state.ws_broadcaster.subscribe_status();
     let mut progress_rx = state.ws_broadcaster.subscribe_progress();
     let mut shutdown_rx = state.ws_broadcaster.subscribe_shutdown();
+    let mut job_rx = state.ws_broadcaster.subscribe_job();
 
     // 主循环：监听广播事件 + 客户端消息
     loop {
@@ -53,6 +54,16 @@ async fn handle_ws_connection(socket: WebSocket, state: Arc<ServerState>) {
                 let msg = json!({
                     "type": "recording_progress",
                     "data": progress,
+                });
+                if sender.send(Message::Text(msg.to_string())).await.is_err() {
+                    break;
+                }
+            }
+            // 后处理任务进度
+            Ok(job) = job_rx.recv() => {
+                let msg = json!({
+                    "type": "job_progress",
+                    "data": job,
                 });
                 if sender.send(Message::Text(msg.to_string())).await.is_err() {
                     break;

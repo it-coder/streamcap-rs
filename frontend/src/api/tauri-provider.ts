@@ -13,6 +13,9 @@ import type {
   RecordingProgress,
   AppVersion,
   FileEntry,
+  RecordingHistoryEntry,
+  PostProcessJob,
+  PostProcessRequest,
 } from "../types";
 
 export class TauriApiProvider implements ApiProvider {
@@ -103,6 +106,35 @@ export class TauriApiProvider implements ApiProvider {
   }
 
   // ========================================
+  // 录制历史 & 后处理
+  // ========================================
+
+  async listHistory(): Promise<RecordingHistoryEntry[]> {
+    return invoke<RecordingHistoryEntry[]>("list_history");
+  }
+
+  async deleteHistory(id: string, deleteFile = false): Promise<void> {
+    return invoke<void>("delete_history", { id, deleteFile });
+  }
+
+  getPlaybackUrl(_path: string): string | null {
+    // desktop 模式无内联流服务，返回 null，由调用方改用 openFile 在系统播放器打开
+    return null;
+  }
+
+  async startPostProcess(req: PostProcessRequest): Promise<PostProcessJob> {
+    return invoke<PostProcessJob>("start_postprocess", { req });
+  }
+
+  async getPostProcess(id: string): Promise<PostProcessJob | null> {
+    try {
+      return await invoke<PostProcessJob>("get_postprocess", { id });
+    } catch {
+      return null;
+    }
+  }
+
+  // ========================================
   // 事件订阅
   // ========================================
 
@@ -128,5 +160,12 @@ export class TauriApiProvider implements ApiProvider {
     return listen<ShutdownPayload>("app:shutdown", (event) => {
       callback(event.payload);
     });
+  }
+
+  async onJobProgress(
+    _callback: (job: PostProcessJob) => void,
+  ): Promise<() => void> {
+    // desktop 模式无 WebSocket，前端通过 getPostProcess 轮询进度
+    return () => {};
   }
 }

@@ -71,6 +71,19 @@ pub fn build_router(state: Arc<ServerState>, static_dir: &str) -> Router {
         .route("/api/files/download", get(handlers::download_file))
         .route("/api/files/raw", get(handlers::serve_file_inline))
         // ========================================
+        // 录制历史 API
+        // ========================================
+        .route("/api/history", get(handlers::list_history))
+        .route(
+            "/api/history/:id",
+            get(handlers::get_history_entry).delete(handlers::delete_history_entry),
+        )
+        // ========================================
+        // 后处理任务 API
+        // ========================================
+        .route("/api/postprocess", post(handlers::start_postprocess))
+        .route("/api/postprocess/:id", get(handlers::get_postprocess))
+        // ========================================
         // WebSocket 实时事件
         // ========================================
         .route("/ws/events", get(ws::ws_handler))

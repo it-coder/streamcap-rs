@@ -180,6 +180,16 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
           </Form.Item>
         </Card>
 
+        <Card type="inner" title={t("settings.webhook")} style={{ marginBottom: 16 }}>
+          <Form.Item
+            label={t("settings.webhookUrl")}
+            name="webhook_url"
+            tooltip={t("settings.webhookTooltip")}
+          >
+            <Input placeholder={t("settings.webhookUrlPlaceholder")} allowClear />
+          </Form.Item>
+        </Card>
+
         <Card
           type="inner"
           title={t("settings.cookie")}
