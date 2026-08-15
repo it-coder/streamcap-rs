@@ -6,6 +6,7 @@ pub mod handlers;
 pub mod ws;
 
 use std::sync::Arc;
+use std::time::Instant;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
@@ -24,6 +25,8 @@ pub struct ServerState {
     pub app_state: Arc<AppState>,
     pub recording_manager: Arc<RecordingManager>,
     pub ws_broadcaster: Arc<WsBroadcaster>,
+    /// 服务器启动时刻（用于 /health 的 uptime）
+    pub started_at: Instant,
 }
 
 /// 构建 Axum 路由
@@ -60,6 +63,7 @@ pub fn build_router(state: Arc<ServerState>, static_dir: &str) -> Router {
         )
         .route("/api/ffmpeg/check", get(handlers::check_ffmpeg))
         .route("/api/version", get(handlers::get_version))
+        .route("/api/health", get(handlers::health))
         // ========================================
         // 文件浏览 API
         // ========================================

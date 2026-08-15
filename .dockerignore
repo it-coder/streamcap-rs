@@ -1,9 +1,15 @@
-target/
-frontend/node_modules/
-frontend/dist/
-StreamCap/
-streamget/
-streamget-rs/
-dy-rec/
-dy-rec-rs/
-.git/
+# 构建产物（在容器各阶段内重新生成）
+target
+**/target
+frontend/dist
+**/frontend/dist
+
+# 依赖缓存（容器内重新安装）
+node_modules
+**/node_modules
+
+# 版本控制与杂项
+.git
+**/*.rs.bk
+*.log
+.DS_Store

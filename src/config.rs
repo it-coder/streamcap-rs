@@ -14,9 +14,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Arc<Self> {
-        let data_dir = dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("streamcap-rs");
+        let data_dir = std::env::var("STREAMCAP_DATA_DIR")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| dirs::data_dir().map(|d| d.join("streamcap-rs")))
+            .unwrap_or_else(|| PathBuf::from("."));
 
         std::fs::create_dir_all(&data_dir).ok();
 

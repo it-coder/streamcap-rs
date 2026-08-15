@@ -1,0 +1,24 @@
+services:
+  streamcap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: streamcap-rs:latest
+    container_name: streamcap-rs
+    ports:
+      - "8080:8080"
+    environment:
+      # 设置与任务持久化目录（对应 AppState 的 STREAMCAP_DATA_DIR）
+      - STREAMCAP_DATA_DIR=/app/data
+    volumes:
+      # 设置 / 任务 JSON 持久化（重启不丢）
+      - ./data:/app/data
+      # 录制文件输出目录；在设置页把「输出根目录」设为 /recordings 即可落盘到宿主机
+      - ./recordings:/recordings
+    restart: unless-stopped
+    # /api/health 无需鉴权，适合探针
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

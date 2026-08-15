@@ -10,6 +10,7 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::info;
 
 use streamcap_rs::broadcaster::WsBroadcaster;
@@ -79,6 +80,7 @@ async fn main() {
         app_state,
         recording_manager: recording_manager.clone(),
         ws_broadcaster,
+        started_at: Instant::now(),
     });
 
     let app = build_router(server_state.clone(), &static_dir);

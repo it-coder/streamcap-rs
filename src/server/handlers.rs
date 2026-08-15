@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio_util::io::ReaderStream;
 
+use crate::disk;
 use crate::models::{AppSettings, FileEntry, RecordingConfig};
 use crate::recording::ffmpeg;
 use crate::server::ServerState;
@@ -268,6 +269,27 @@ pub async fn check_ffmpeg() -> Result<Json<serde_json::Value>, ApiError> {
 /// GET /api/version — 获取应用版本号（单一可信源 = Cargo.toml version）
 pub async fn get_version() -> impl IntoResponse {
     Json(json!({ "version": env!("CARGO_PKG_VERSION") }))
+}
+
+/// GET /api/health — 健康检查（供 Docker/k8s 探针，无需鉴权）
+///
+/// 返回服务状态、版本、活跃录制数、磁盘剩余空间(GiB)与运行时长。
+pub async fn health(State(state): State<Arc<ServerState>>) -> impl IntoResponse {
+    let active_recordings = state.recording_manager.active_count().await;
+    let uptime_seconds = state.started_at.elapsed().as_secs();
+    // 在独立作用域读取 settings，确保锁守卫不跨 .await
+    let disk_free_gb = {
+        let settings = state.app_state.settings.read();
+        disk::available_gb(std::path::Path::new(&settings.output_dir)).unwrap_or(0.0)
+    };
+
+    Json(json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+        "active_recordings": active_recordings,
+        "disk_free_gb": disk_free_gb,
+        "uptime_seconds": uptime_seconds,
+    }))
 }
 
 /// 文件列表查询参数
