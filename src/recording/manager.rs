@@ -4,10 +4,11 @@
 
 use crate::broadcaster::{EventBroadcaster, ShutdownPayload};
 use crate::config::AppState;
-use crate::models::{RecordingConfig, StreamInfo};
+use crate::disk;
+use crate::models::{RecordingConfig, RecordingProgress, RecordingStatus, StreamInfo, TimeRange};
 use crate::recording::ffmpeg::{self, FFmpegRecorder};
 use crate::stream::resolver;
-use chrono::Utc;
+use chrono::{Local, Utc};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -78,20 +79,49 @@ impl RecordingManager {
         };
 
         // 在独立作用域中读取 settings，确保守卫在 .await 前完全释放
-        let (proxy, quality, segment_duration_secs) = {
+        let (proxy, quality, segment_duration_secs, threshold_gb, cookies_by_platform, settings_output_dir) = {
             let settings = self.app_state.settings.read();
             (
                 settings.proxy_url.clone(),
                 config.quality.clone(),
                 settings.segment_duration_seconds,
+                settings.recording_space_threshold_gb,
+                settings.cookies_by_platform.clone(),
+                settings.output_dir.clone(),
             )
         };
 
         info!("开始检测直播: {}", config.url);
 
+        // 磁盘空间预检查（启动前）
+        let base_output_dir = config
+            .output_dir
+            .clone()
+            .unwrap_or(settings_output_dir);
+        if let Err(e) = disk::check_space(&PathBuf::from(&base_output_dir), threshold_gb) {
+            warn!("磁盘空间不足，拒绝启动录制: {}", e);
+            {
+                let mut recordings = self.app_state.recordings.write();
+                if let Some(r) = recordings.iter_mut().find(|r| r.id == recording_id) {
+                    r.error_message = Some(e.clone());
+                    r.updated_at = Utc::now();
+                }
+            }
+            let _ = self.app_state.save_recordings().await;
+            return Err(e);
+        }
+
+        // 按平台获取 Cookie
+        let (platform_key, _) = resolver::detect_platform(&config.url);
+        let cookie = cookies_by_platform
+            .get(platform_key)
+            .filter(|s| !s.is_empty())
+            .cloned();
+
         // 解析流URL
         let stream_info =
-            resolver::resolve_stream(&config.url, &quality, proxy.as_deref(), None).await?;
+            resolver::resolve_stream(&config.url, &quality, proxy.as_deref(), cookie.as_deref())
+                .await?;
 
         info!(
             "获取流成功: {} [{}] | {}",
@@ -148,6 +178,7 @@ impl RecordingManager {
         let status_tx = self.status_tx.clone();
         let broadcaster = self.broadcaster.clone();
         let opts = output_path.clone();
+        let schedule = config.schedule.clone();
 
         // 启动录制任务（支持分段循环）
         let handle = tokio::spawn(async move {
@@ -160,6 +191,8 @@ impl RecordingManager {
                 &opts,
                 stop_rx,
                 segment_duration_secs,
+                threshold_gb,
+                schedule,
                 app_state.clone(),
                 status_tx.clone(),
                 broadcaster.clone(),
@@ -310,14 +343,37 @@ impl RecordingManager {
 
                 for recording in &recordings {
                     info!("检查记录：{:?}", recording);
+
+                    // 调度时间窗口检查：不在窗口内则跳过检测
+                    if !TimeRange::any_contains(&recording.schedule, Local::now()) {
+                        info!("{} 不在录制时间窗口内，跳过检测", recording.url);
+                        continue;
+                    }
+
                     // 在独立作用域中读取 settings，确保守卫在 .await 前完全释放
-                    let (proxy, quality) = {
+                    let (proxy, quality, cookies_by_platform) = {
                         let settings = this.app_state.settings.read();
-                        (settings.proxy_url.clone(), recording.quality.clone())
+                        (
+                            settings.proxy_url.clone(),
+                            recording.quality.clone(),
+                            settings.cookies_by_platform.clone(),
+                        )
                     };
 
-                    match resolver::resolve_stream(&recording.url, &quality, proxy.as_deref(), None)
-                        .await
+                    // 按平台获取 Cookie
+                    let (platform_key, _) = resolver::detect_platform(&recording.url);
+                    let cookie = cookies_by_platform
+            .get(platform_key)
+            .filter(|s| !s.is_empty())
+            .cloned();
+
+                    match resolver::resolve_stream(
+                        &recording.url,
+                        &quality,
+                        proxy.as_deref(),
+                        cookie.as_deref(),
+                    )
+                    .await
                     {
                         Ok(stream_info) => {
                             info!(
@@ -442,6 +498,8 @@ async fn run_ffmpeg_recording(
     output_path: &PathBuf,
     stop_rx: watch::Receiver<bool>,
     segment_duration_secs: u64,
+    threshold_gb: u64,
+    schedule: Vec<TimeRange>,
     app_state: Arc<AppState>,
     status_tx: broadcast::Sender<RecordingConfig>,
     broadcaster: Arc<dyn EventBroadcaster>,
@@ -456,6 +514,7 @@ async fn run_ffmpeg_recording(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
 
+    let recording_start = tokio::time::Instant::now();
     let mut segment_num: u32 = 0;
 
     loop {
@@ -496,11 +555,15 @@ async fn run_ffmpeg_recording(
             .start(stream_url, output_format, user_agent, proxy_url)
             .await?;
 
-        // 监控循环：等待停止信号 / 流结束 / 分段超时
+        // 监控循环：等待停止信号 / 流结束 / 分段超时 / 磁盘满 / 窗口结束
         let segment_start = tokio::time::Instant::now();
         let segment_dur = Duration::from_secs(segment_duration_secs);
         let mut stream_ended = false;
         let mut stop_requested = false;
+        let mut disk_full = false;
+        let mut last_disk_check = tokio::time::Instant::now();
+        let mut last_progress_time = tokio::time::Instant::now();
+        let mut last_size: u64 = 0;
 
         loop {
             // 检查停止信号
@@ -519,6 +582,58 @@ async fn run_ffmpeg_recording(
                 );
                 recorder.stop_gracefully().await;
                 break;
+            }
+
+            // 磁盘空间检查（每 30 秒）
+            if threshold_gb > 0 && last_disk_check.elapsed() >= Duration::from_secs(30) {
+                last_disk_check = tokio::time::Instant::now();
+                if let Err(e) = disk::check_space(&dir, threshold_gb) {
+                    warn!("{} — 停止录制", e);
+                    recorder.stop_gracefully().await;
+                    disk_full = true;
+                    {
+                        let mut recordings = app_state.recordings.write();
+                        if let Some(r) = recordings.iter_mut().find(|r| r.id == recording_id) {
+                            r.error_message = Some(e);
+                            r.updated_at = Utc::now();
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // 调度时间窗口检查：窗口结束则停止录制
+            if !TimeRange::any_contains(&schedule, Local::now()) {
+                info!("不在录制时间窗口内，停止录制");
+                recorder.stop_gracefully().await;
+                stop_requested = true;
+                break;
+            }
+
+            // 录制进度推送（每 5 秒）
+            if last_progress_time.elapsed() >= Duration::from_secs(5) {
+                let now = tokio::time::Instant::now();
+                let size = tokio::fs::metadata(&segment_path)
+                    .await
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                let dt = now.duration_since(last_progress_time).as_secs_f64();
+                let speed_kbps = if dt > 0.0 && size >= last_size {
+                    ((size - last_size) as f64 / dt) / 1024.0
+                } else {
+                    0.0
+                };
+                last_size = size;
+                last_progress_time = now;
+
+                let progress = RecordingProgress {
+                    recording_id: recording_id.to_string(),
+                    status: RecordingStatus::Recording,
+                    duration_seconds: recording_start.elapsed().as_secs(),
+                    file_size_bytes: size,
+                    download_speed_kbps: speed_kbps,
+                };
+                broadcaster.broadcast_progress(&progress);
             }
 
             // 检查 FFmpeg 进程状态
@@ -561,7 +676,7 @@ async fn run_ffmpeg_recording(
         }
 
         // 判断是否继续下一段
-        if stop_requested || stream_ended {
+        if stop_requested || stream_ended || disk_full {
             break;
         }
 

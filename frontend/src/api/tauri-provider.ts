@@ -10,6 +10,7 @@ import type {
   AppSettings,
   VideoQuality,
   ShutdownPayload,
+  RecordingProgress,
 } from "../types";
 
 export class TauriApiProvider implements ApiProvider {
@@ -85,6 +86,14 @@ export class TauriApiProvider implements ApiProvider {
     callback: (status: RecordingConfig) => void,
   ): Promise<() => void> {
     return listen<RecordingConfig>("recording_status", (event) => {
+      callback(event.payload);
+    });
+  }
+
+  async onProgressChange(
+    callback: (progress: RecordingProgress) => void,
+  ): Promise<() => void> {
+    return listen<RecordingProgress>("recording_progress", (event) => {
       callback(event.payload);
     });
   }

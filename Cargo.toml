@@ -57,6 +57,7 @@ parking_lot = "0.12"
 tokio-util = { version = "0.7", features = ["io"] }
 bytes = "1"
 futures-util = "0.3"
+fs2 = "0.4"
 
 # Desktop 依赖 (optional)
 tauri = { version = "2", features = ["tray-icon"], optional = true }

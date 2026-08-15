@@ -57,6 +57,15 @@ export interface AppSettings {
   enable_conversion: boolean;
   conversion_format: OutputFormat;
   delete_original_after_conversion: boolean;
+  cookies_by_platform: Record<string, string>;
+}
+
+export interface RecordingProgress {
+  recording_id: string;
+  status: RecordingStatus;
+  duration_seconds: number;
+  file_size_bytes: number;
+  download_speed_kbps: number;
 }
 
 export interface ShutdownPayload {

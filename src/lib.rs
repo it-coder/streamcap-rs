@@ -10,6 +10,7 @@ pub mod config;
 pub mod stream;
 pub mod recording;
 pub mod broadcaster;
+pub mod disk;
 
 #[cfg(feature = "desktop")]
 pub mod commands;

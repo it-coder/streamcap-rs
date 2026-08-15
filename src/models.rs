@@ -2,6 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// 视频质量等级
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -158,6 +159,48 @@ pub struct TimeRange {
     pub end: String,   // "HH:MM"
 }
 
+impl TimeRange {
+    /// 判断给定时间是否在窗口内（支持跨零点，如 22:00-02:00）
+    ///
+    /// - start == end：整天
+    /// - start < end（如 08:00-22:00）：start <= now < end
+    /// - start > end（如 22:00-02:00，跨零点）：now >= start || now < end
+    pub fn contains(&self, now: chrono::DateTime<chrono::Local>) -> bool {
+        let now_min = now.format("%H:%M").to_string();
+        let start = self.start.trim();
+        let end = self.end.trim();
+
+        if start.is_empty() || end.is_empty() {
+            return true;
+        }
+        if start == end {
+            return true;
+        }
+        let now_str = now_min.as_str();
+        if start < end {
+            now_str >= start && now_str < end
+        } else {
+            now_str >= start || now_str < end
+        }
+    }
+
+    /// 一组窗口是否覆盖当前时间；空列表 = 不限制（全天）
+    pub fn any_contains(
+        schedule: &[TimeRange],
+        now: chrono::DateTime<chrono::Local>,
+    ) -> bool {
+        if schedule.is_empty() {
+            return true;
+        }
+        schedule.iter().any(|w| w.contains(now))
+    }
+
+    /// 格式化为显示字符串
+    pub fn display(&self) -> String {
+        format!("{}-{}", self.start, self.end)
+    }
+}
+
 /// 录制任务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingConfig {
@@ -290,6 +333,10 @@ pub struct AppSettings {
     /// 转换后是否删除原始文件（仅成功时删除）
     #[serde(default = "default_true")]
     pub delete_original_after_conversion: bool,
+    /// 各平台 Cookie 配置（key=平台标识，value=Cookie 字符串）
+    /// 用于解析需要登录才能获取高画质的直播间流
+    #[serde(default)]
+    pub cookies_by_platform: HashMap<String, String>,
 }
 
 fn default_output_dir() -> String {
@@ -333,6 +380,7 @@ impl Default for AppSettings {
             enable_conversion: false,
             conversion_format: OutputFormat::MP4,
             delete_original_after_conversion: true,
+            cookies_by_platform: HashMap::new(),
         }
     }
 }

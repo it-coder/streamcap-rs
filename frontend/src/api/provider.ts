@@ -4,7 +4,7 @@
 // - 桌面客户端模式 (window.__TAURI__ 存在) → TauriApiProvider (invoke + listen)
 // - B/S 服务器模式 (浏览器) → HttpApiProvider (fetch + WebSocket)
 
-import type { RecordingConfig, AppSettings, VideoQuality, ShutdownPayload } from "../types";
+import type { RecordingConfig, AppSettings, VideoQuality, ShutdownPayload, RecordingProgress } from "../types";
 
 export type { ShutdownPayload } from "../types";
 
@@ -31,6 +31,7 @@ export interface ApiProvider {
 
   // 事件订阅 — 返回取消订阅函数
   onStatusChange(callback: (status: RecordingConfig) => void): Promise<() => void>;
+  onProgressChange(callback: (progress: RecordingProgress) => void): Promise<() => void>;
   onShutdown(callback: (payload: ShutdownPayload) => void): Promise<() => void>;
 }
 

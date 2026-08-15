@@ -13,6 +13,7 @@ interface Props {
 export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
   const {
     recordings,
+    progressMap,
     loading,
     toggleMonitor,
     startRecording,
@@ -49,6 +50,7 @@ export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
         <Col key={r.id} xs={24} sm={12} md={12} lg={8} xl={8}>
           <RecordingCard
             recording={r}
+            progress={progressMap[r.id]}
             onToggleMonitor={toggleMonitor}
             onStartRecording={startRecording}
             onStopRecording={stopRecording}

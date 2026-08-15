@@ -2,6 +2,7 @@
 //!
 //! 客户端连接 /ws/events 后，服务器推送以下事件：
 //! - { type: "recording_status", data: RecordingConfig }
+//! - { type: "recording_progress", data: RecordingProgress }
 //! - { type: "app:shutdown", data: ShutdownPayload }
 
 use std::sync::Arc;
@@ -31,6 +32,7 @@ async fn handle_ws_connection(socket: WebSocket, state: Arc<ServerState>) {
 
     // 订阅广播频道
     let mut status_rx = state.ws_broadcaster.subscribe_status();
+    let mut progress_rx = state.ws_broadcaster.subscribe_progress();
     let mut shutdown_rx = state.ws_broadcaster.subscribe_shutdown();
 
     // 主循环：监听广播事件 + 客户端消息
@@ -41,6 +43,16 @@ async fn handle_ws_connection(socket: WebSocket, state: Arc<ServerState>) {
                 let msg = json!({
                     "type": "recording_status",
                     "data": status,
+                });
+                if sender.send(Message::Text(msg.to_string())).await.is_err() {
+                    break;
+                }
+            }
+            // 录制进度（时长/文件大小/速度）
+            Ok(progress) = progress_rx.recv() => {
+                let msg = json!({
+                    "type": "recording_progress",
+                    "data": progress,
                 });
                 if sender.send(Message::Text(msg.to_string())).await.is_err() {
                     break;

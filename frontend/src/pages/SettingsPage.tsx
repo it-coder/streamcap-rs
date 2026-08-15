@@ -14,6 +14,21 @@ import {
 } from "antd";
 import type { AppSettings } from "../types";
 
+const { TextArea } = Input;
+
+/** 平台列表（key 对应后端 detect_platform 返回的标识） */
+const COOKIE_PLATFORMS = [
+  { key: "douyin", label: "抖音" },
+  { key: "bilibili", label: "哔哩哔哩" },
+  { key: "huya", label: "虎牙" },
+  { key: "kuaishou", label: "快手" },
+  { key: "douyu", label: "斗鱼" },
+  { key: "twitch", label: "Twitch" },
+  { key: "youtube", label: "YouTube" },
+  { key: "tiktok", label: "TikTok" },
+  { key: "rednote", label: "小红书" },
+];
+
 interface Props {
   settings: AppSettings | null;
   loading: boolean;
@@ -146,6 +161,27 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
           <Form.Item label="代理地址" name="proxy_url">
             <Input placeholder="http://127.0.0.1:7890" />
           </Form.Item>
+        </Card>
+
+        <Card
+          type="inner"
+          title="Cookie 配置"
+          style={{ marginBottom: 16 }}
+          extra="按平台配置，留空则不使用"
+        >
+          {COOKIE_PLATFORMS.map((p) => (
+            <Form.Item
+              key={p.key}
+              label={p.label}
+              name={["cookies_by_platform", p.key]}
+            >
+              <TextArea
+                rows={2}
+                placeholder={`粘贴 ${p.label} 的 Cookie（如 SESSDATA=xxx; ...）`}
+                autoSize={{ minRows: 1, maxRows: 3 }}
+              />
+            </Form.Item>
+          ))}
         </Card>
 
         <Form.Item label="默认视频质量" name="default_quality">

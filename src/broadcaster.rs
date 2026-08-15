@@ -3,7 +3,7 @@
 //! 桌面模式使用 TauriBroadcaster（emit Tauri 事件）
 //! 服务器模式使用 WsBroadcaster（tokio broadcast channel → WebSocket fan-out）
 
-use crate::models::RecordingConfig;
+use crate::models::{RecordingConfig, RecordingProgress};
 use serde::Serialize;
 use std::sync::Arc;
 
@@ -46,6 +46,8 @@ impl ShutdownPayload {
 pub trait EventBroadcaster: Send + Sync {
     /// 推送录制状态变更
     fn broadcast_status(&self, status: &RecordingConfig);
+    /// 推送录制进度（时长/文件大小/速度）
+    fn broadcast_progress(&self, progress: &RecordingProgress);
     /// 推送应用关闭事件
     fn broadcast_shutdown(&self, payload: &ShutdownPayload);
 }
@@ -57,15 +59,18 @@ pub trait EventBroadcaster: Send + Sync {
 /// WebSocket 广播器：通过 tokio broadcast channel fan-out 到所有连接的 WS 客户端
 pub struct WsBroadcaster {
     status_tx: tokio::sync::broadcast::Sender<RecordingConfig>,
+    progress_tx: tokio::sync::broadcast::Sender<RecordingProgress>,
     shutdown_tx: tokio::sync::broadcast::Sender<ShutdownPayload>,
 }
 
 impl WsBroadcaster {
     pub fn new() -> Arc<Self> {
         let (status_tx, _) = tokio::sync::broadcast::channel(100);
+        let (progress_tx, _) = tokio::sync::broadcast::channel(100);
         let (shutdown_tx, _) = tokio::sync::broadcast::channel(16);
         Arc::new(Self {
             status_tx,
+            progress_tx,
             shutdown_tx,
         })
     }
@@ -73,6 +78,11 @@ impl WsBroadcaster {
     /// 订阅状态变更事件（每个 WebSocket 连接调用一次）
     pub fn subscribe_status(&self) -> tokio::sync::broadcast::Receiver<RecordingConfig> {
         self.status_tx.subscribe()
+    }
+
+    /// 订阅录制进度事件
+    pub fn subscribe_progress(&self) -> tokio::sync::broadcast::Receiver<RecordingProgress> {
+        self.progress_tx.subscribe()
     }
 
     /// 订阅关闭事件
@@ -84,6 +94,10 @@ impl WsBroadcaster {
 impl EventBroadcaster for WsBroadcaster {
     fn broadcast_status(&self, status: &RecordingConfig) {
         let _ = self.status_tx.send(status.clone());
+    }
+
+    fn broadcast_progress(&self, progress: &RecordingProgress) {
+        let _ = self.progress_tx.send(progress.clone());
     }
 
     fn broadcast_shutdown(&self, payload: &ShutdownPayload) {
@@ -112,6 +126,11 @@ impl EventBroadcaster for TauriBroadcaster {
     fn broadcast_status(&self, status: &RecordingConfig) {
         use tauri::Emitter;
         let _ = self.app_handle.emit("recording_status", status);
+    }
+
+    fn broadcast_progress(&self, progress: &RecordingProgress) {
+        use tauri::Emitter;
+        let _ = self.app_handle.emit("recording_progress", progress);
     }
 
     fn broadcast_shutdown(&self, payload: &ShutdownPayload) {

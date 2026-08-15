@@ -5,13 +5,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../api/provider";
-import type { RecordingConfig, VideoQuality } from "../types";
+import type { RecordingConfig, VideoQuality, RecordingProgress, TimeRange } from "../types";
 
 export type UseRecordingsResult = {
   recordings: RecordingConfig[];
+  progressMap: Record<string, RecordingProgress>;
   loading: boolean;
   refresh: () => Promise<void>;
-  addRecording: (url: string, monitorEnabled: boolean, quality: VideoQuality) => Promise<RecordingConfig>;
+  addRecording: (url: string, monitorEnabled: boolean, quality: VideoQuality, schedule?: TimeRange[]) => Promise<RecordingConfig>;
   removeRecording: (id: string) => Promise<void>;
   toggleMonitor: (id: string, enabled: boolean) => Promise<void>;
   startRecording: (id: string) => Promise<void>;
@@ -20,6 +21,7 @@ export type UseRecordingsResult = {
 
 export function useRecordings() {
   const [recordings, setRecordings] = useState<RecordingConfig[]>([]);
+  const [progressMap, setProgressMap] = useState<Record<string, RecordingProgress>>({});
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -48,6 +50,7 @@ export function useRecordings() {
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;
+    let unlistenProgress: (() => void) | undefined;
     let cancelled = false;
 
     // 先注册事件监听，确保不会漏掉 refresh 期间后端推送的状态变更
@@ -58,6 +61,14 @@ export function useRecordings() {
         setRecordings((prev) =>
           prev.map((r) => (r.id === updated.id ? updated : r))
         );
+        // 录制结束时清除进度
+        if (!updated.is_recording) {
+          setProgressMap((prev) => {
+            const next = { ...prev };
+            delete next[updated.id];
+            return next;
+          });
+        }
       })
       .then((fn) => {
         if (cancelled) {
@@ -73,16 +84,42 @@ export function useRecordings() {
         refresh();
       });
 
+    // 录制进度订阅
+    api
+      .onProgressChange((progress) => {
+        if (cancelled) return;
+        setProgressMap((prev) => ({
+          ...prev,
+          [progress.recording_id]: progress,
+        }));
+      })
+      .then((fn) => {
+        if (cancelled) {
+          fn();
+        } else {
+          unlistenProgress = fn;
+        }
+      })
+      .catch(() => {});
+
     return () => {
       cancelled = true;
       unlisten?.();
+      unlistenProgress?.();
     };
   }, [refresh]);
 
   // 操作方法（操作后无需手动 refresh，事件会自动推送更新）
   const addRecording = useCallback(
-    async (url: string, monitorEnabled: boolean, quality: VideoQuality) => {
+    async (url: string, monitorEnabled: boolean, quality: VideoQuality, schedule?: TimeRange[]) => {
       const config = await api.addRecording({ url, monitorEnabled, quality });
+      // 如果有调度窗口，创建后立即更新（add 命令不支持 schedule 参数）
+      if (schedule && schedule.length > 0) {
+        const updated = { ...config, schedule };
+        await api.updateRecording(updated);
+        setRecordings((prev) => [...prev, updated]);
+        return updated;
+      }
       // 手动追加，因为 add 命令不触发 broadcast
       setRecordings((prev) => [...prev, config]);
       return config;
@@ -121,6 +158,7 @@ export function useRecordings() {
 
   return {
     recordings,
+    progressMap,
     loading,
     refresh,
     addRecording,

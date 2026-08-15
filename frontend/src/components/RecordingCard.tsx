@@ -9,19 +9,37 @@ import {
   DeleteOutlined,
 } from "@ant-design/icons";
 import { StatusBadge } from "./StatusBadge";
-import type { RecordingConfig } from "../types";
+import type { RecordingConfig, RecordingProgress } from "../types";
 import { QUALITY_OPTIONS } from "../types";
 
 interface Props {
   recording: RecordingConfig;
+  progress?: RecordingProgress;
   onToggleMonitor: (id: string, enabled: boolean) => Promise<void>;
   onStartRecording: (id: string) => Promise<void>;
   onStopRecording: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }
 
+/** 格式化时长秒为 HH:MM:SS */
+function formatDuration(secs: number): string {
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  return [h, m, s].map((v) => String(v).padStart(2, "0")).join(":");
+}
+
+/** 格式化文件大小 */
+function formatSize(bytes: number): string {
+  if (bytes >= 1_073_741_824) return (bytes / 1_073_741_824).toFixed(2) + " GB";
+  if (bytes >= 1_048_576) return (bytes / 1_048_576).toFixed(1) + " MB";
+  if (bytes >= 1024) return (bytes / 1024).toFixed(0) + " KB";
+  return bytes + " B";
+}
+
 export function RecordingCard({
   recording,
+  progress,
   onToggleMonitor,
   onStartRecording,
   onStopRecording,
@@ -114,8 +132,32 @@ export function RecordingCard({
               <span>⏱️ {new Date(recording.recording_started_at).toLocaleTimeString()}</span>
             </Tooltip>
           )}
+          {recording.schedule.length > 0 && (
+            <Tooltip title="录制时间窗口">
+              <span>⏰ {recording.schedule.map((s) => `${s.start}-${s.end}`).join(", ")}</span>
+            </Tooltip>
+          )}
         </Space>
       </div>
+
+      {recording.is_recording && progress && (
+        <div
+          style={{
+            background: "#f0f9ff",
+            borderRadius: 6,
+            padding: "6px 10px",
+            marginBottom: 12,
+            fontSize: 12,
+            color: "#374151",
+          }}
+        >
+          <Space size="middle">
+            <span>⏱️ {formatDuration(progress.duration_seconds)}</span>
+            <span>📦 {formatSize(progress.file_size_bytes)}</span>
+            <span>⚡ {progress.download_speed_kbps > 0 ? (progress.download_speed_kbps / 1024).toFixed(2) + " MB/s" : "-"}</span>
+          </Space>
+        </div>
+      )}
 
       {recording.error_message && (
         <div style={{ color: "#EF4444", fontSize: 12, marginBottom: 8 }}>

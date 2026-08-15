@@ -9,12 +9,14 @@ import type {
   AppSettings,
   VideoQuality,
   ShutdownPayload,
+  RecordingProgress,
 } from "../types";
 
 export class HttpApiProvider implements ApiProvider {
   private ws: WebSocket | null = null;
   private wsReady: Promise<void> | null = null;
   private statusCallbacks: Set<(status: RecordingConfig) => void> = new Set();
+  private progressCallbacks: Set<(progress: RecordingProgress) => void> = new Set();
   private shutdownCallbacks: Set<(payload: ShutdownPayload) => void> = new Set();
 
   // ========================================
@@ -162,6 +164,8 @@ export class HttpApiProvider implements ApiProvider {
           const msg = JSON.parse(event.data);
           if (msg.type === "recording_status") {
             this.statusCallbacks.forEach((cb) => cb(msg.data));
+          } else if (msg.type === "recording_progress") {
+            this.progressCallbacks.forEach((cb) => cb(msg.data));
           } else if (msg.type === "app:shutdown") {
             this.shutdownCallbacks.forEach((cb) => cb(msg.data));
           }
@@ -181,6 +185,16 @@ export class HttpApiProvider implements ApiProvider {
     this.statusCallbacks.add(callback);
     return () => {
       this.statusCallbacks.delete(callback);
+    };
+  }
+
+  async onProgressChange(
+    callback: (progress: RecordingProgress) => void,
+  ): Promise<() => void> {
+    await this.ensureWs();
+    this.progressCallbacks.add(callback);
+    return () => {
+      this.progressCallbacks.delete(callback);
     };
   }
 
