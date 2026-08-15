@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 use tauri_plugin_shell::ShellExt;
+use base64::Engine;
 
 /// 列出目录内容（沙箱限制在 output_dir 内，防目录遍历）
 #[tauri::command]
@@ -79,4 +80,49 @@ pub fn open_file(app: tauri::AppHandle, path: String) -> Result<(), String> {
     app.shell()
         .open(path, None)
         .map_err(|e| format!("打开文件失败: {}", e))
+}
+
+/// 读取文件并返回 data URL（用于桌面模式下在 <img> 中预览缩略图等本地文件）
+///
+/// 沙箱限制在 output_dir 内，防目录遍历。
+#[tauri::command]
+pub async fn read_file_base64(
+    state: State<'_, Arc<AppState>>,
+    path: String,
+) -> Result<String, String> {
+    let root = {
+        let settings = state.settings.read();
+        PathBuf::from(&settings.output_dir)
+    };
+    let root_abs = root
+        .canonicalize()
+        .map_err(|e| format!("路径无效 {}: {}", root.display(), e))?;
+    let path_abs = PathBuf::from(&path)
+        .canonicalize()
+        .map_err(|e| format!("路径无效 {}: {}", path, e))?;
+
+    if path_abs.is_dir() || !path_abs.starts_with(&root_abs) {
+        return Err("非法路径：仅允许访问输出目录内的文件".into());
+    }
+
+    let bytes = tokio::fs::read(&path_abs)
+        .await
+        .map_err(|e| format!("读取文件失败: {}", e))?;
+
+    let mime = match path_abs
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        _ => "application/octet-stream",
+    };
+
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, encoded))
 }

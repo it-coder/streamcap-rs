@@ -69,6 +69,7 @@ pub fn build_router(state: Arc<ServerState>, static_dir: &str) -> Router {
         // ========================================
         .route("/api/files", get(handlers::list_files))
         .route("/api/files/download", get(handlers::download_file))
+        .route("/api/files/raw", get(handlers::serve_file_inline))
         // ========================================
         // WebSocket 实时事件
         // ========================================

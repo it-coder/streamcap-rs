@@ -261,6 +261,9 @@ pub struct RecordingConfig {
     /// 当前重试次数（0=未重试，仅录制失败自动重试时 >0）
     #[serde(default)]
     pub retry_count: u32,
+    /// 封面帧快照路径（录制中定期抓取，可能为 null）
+    #[serde(default)]
+    pub thumbnail: Option<String>,
 }
 
 /// 文件条目（文件浏览 API 返回）

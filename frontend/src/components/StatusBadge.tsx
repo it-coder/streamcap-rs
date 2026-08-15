@@ -2,12 +2,13 @@
 
 import { Tag } from "antd";
 import type { RecordingConfig } from "../types";
+import { useI18n } from "../i18n";
 
 interface Props {
   recording: RecordingConfig;
 }
 
-function getStatus(recording: RecordingConfig) {
+function getStatusKey(recording: RecordingConfig): string {
   if (recording.is_recording && recording.retry_count > 0) return "retrying";
   if (recording.is_recording) return "recording";
   if (recording.is_live) return "live";
@@ -16,21 +17,30 @@ function getStatus(recording: RecordingConfig) {
   return "offline";
 }
 
-const STATUS_CONFIG: Record<
-  string,
-  { label: string; color: string }
-> = {
-  monitoring: { label: "监控中", color: "default" },
-  checking: { label: "检查中", color: "warning" },
-  live: { label: "直播中", color: "success" },
-  recording: { label: "录制中", color: "red" },
-  retrying: { label: "重试中", color: "gold" },
-  offline: { label: "离线", color: "default" },
-  error: { label: "错误", color: "error" },
+const STATUS_KEY_TO_LABEL: Record<string, string> = {
+  monitoring: "status.monitoring",
+  checking: "status.checking",
+  live: "status.live",
+  recording: "status.recording",
+  retrying: "status.retrying",
+  offline: "status.offline",
+  error: "status.error",
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  monitoring: "default",
+  checking: "warning",
+  live: "success",
+  recording: "red",
+  retrying: "gold",
+  offline: "default",
+  error: "error",
 };
 
 export function StatusBadge({ recording }: Props) {
-  const status = getStatus(recording);
-  const config = STATUS_CONFIG[status] || STATUS_CONFIG.offline;
-  return <Tag color={config.color}>{config.label}</Tag>;
+  const { t } = useI18n();
+  const status = getStatusKey(recording);
+  const color = STATUS_COLOR[status] || STATUS_COLOR.offline;
+  const label = t(STATUS_KEY_TO_LABEL[status] || STATUS_KEY_TO_LABEL.offline);
+  return <Tag color={color}>{label}</Tag>;
 }

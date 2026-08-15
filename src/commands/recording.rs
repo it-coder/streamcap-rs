@@ -48,6 +48,7 @@ pub async fn add_recording(
         error_message: None,
         segment_count: 0,
         retry_count: 0,
+        thumbnail: None,
     };
 
     {

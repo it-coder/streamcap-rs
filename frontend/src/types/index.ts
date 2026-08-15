@@ -41,6 +41,7 @@ export interface RecordingConfig {
   error_message: string | null;
   segment_count: number;
   retry_count: number;
+  thumbnail: string | null;
 }
 
 export interface AppSettings {
@@ -109,14 +110,14 @@ export const FORMAT_OPTIONS: { value: OutputFormat; label: string }[] = [
 ];
 
 // 平台检测规则（供 URL 输入时自动识别）
-export const PLATFORM_PATTERNS: { pattern: string; label: string; icon: string }[] = [
-  { pattern: "douyin.com", label: "抖音直播", icon: "🎵" },
-  { pattern: "bilibili.com", label: "哔哩哔哩直播", icon: "📺" },
-  { pattern: "twitch.tv", label: "Twitch", icon: "🎮" },
-  { pattern: "youtube.com", label: "YouTube", icon: "▶️" },
-  { pattern: "huya.com", label: "虎牙直播", icon: "🐯" },
-  { pattern: "kuaishou.com", label: "快手直播", icon: "📱" },
-  { pattern: "douyu.com", label: "斗鱼直播", icon: "🐟" },
-  { pattern: "tiktok.com", label: "TikTok", icon: "🎵" },
-  { pattern: "xiaohongshu.com", label: "小红书直播", icon: "📕" },
+export const PLATFORM_PATTERNS: { pattern: string; key: string; label: string; icon: string }[] = [
+  { pattern: "douyin.com", key: "douyin", label: "抖音直播", icon: "🎵" },
+  { pattern: "bilibili.com", key: "bilibili", label: "哔哩哔哩直播", icon: "📺" },
+  { pattern: "twitch.tv", key: "twitch", label: "Twitch", icon: "🎮" },
+  { pattern: "youtube.com", key: "youtube", label: "YouTube", icon: "▶️" },
+  { pattern: "huya.com", key: "huya", label: "虎牙直播", icon: "🐯" },
+  { pattern: "kuaishou.com", key: "kuaishou", label: "快手直播", icon: "📱" },
+  { pattern: "douyu.com", key: "douyu", label: "斗鱼直播", icon: "🐟" },
+  { pattern: "tiktok.com", key: "tiktok", label: "TikTok", icon: "🎵" },
+  { pattern: "xiaohongshu.com", key: "rednote", label: "小红书直播", icon: "📕" },
 ];

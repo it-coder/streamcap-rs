@@ -97,6 +97,11 @@ export class TauriApiProvider implements ApiProvider {
     return invoke<void>("open_file", { path });
   }
 
+  async getThumbnail(path: string): Promise<string> {
+    // desktop 模式：读取本地文件为 data URL，供 <img> 预览
+    return invoke<string>("read_file_base64", { path });
+  }
+
   // ========================================
   // 事件订阅
   // ========================================

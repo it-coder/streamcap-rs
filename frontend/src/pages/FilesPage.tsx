@@ -12,6 +12,7 @@ import {
 } from "@ant-design/icons";
 import { api, isTauri } from "../api/provider";
 import type { FileEntry } from "../types";
+import { useI18n } from "../i18n";
 
 /** 格式化文件大小 */
 function formatSize(bytes: number): string {
@@ -22,6 +23,7 @@ function formatSize(bytes: number): string {
 }
 
 export function FilesPage() {
+  const { t } = useI18n();
   const [currentDir, setCurrentDir] = useState<string | undefined>(undefined);
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -33,11 +35,11 @@ export function FilesPage() {
       setEntries(list);
       setCurrentDir(dir);
     } catch (e) {
-      message.error(`加载文件列表失败: ${e}`);
+      message.error(t("files.loadFail", { error: String(e) }));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     load(undefined);
@@ -51,7 +53,7 @@ export function FilesPage() {
     try {
       await api.openFile(entry.path);
     } catch (e) {
-      message.error(`打开失败: ${e}`);
+      message.error(t("files.openFail", { error: String(e) }));
     }
   };
 
@@ -66,7 +68,7 @@ export function FilesPage() {
 
   const columns: ColumnsType<FileEntry> = [
     {
-      title: "名称",
+      title: t("files.name"),
       dataIndex: "name",
       render: (_: string, entry: FileEntry) => (
         <Space>
@@ -80,29 +82,41 @@ export function FilesPage() {
       ),
     },
     {
-      title: "大小",
+      title: t("files.size"),
       dataIndex: "size",
       width: 120,
       render: (size: number, entry: FileEntry) =>
         entry.is_dir ? "-" : formatSize(size),
     },
     {
-      title: "修改时间",
+      title: t("files.modified"),
       dataIndex: "modified",
       width: 200,
       render: (m: string | null) => (m ? new Date(m).toLocaleString() : "-"),
     },
     {
-      title: "操作",
+      title: t("files.action"),
       key: "action",
       width: 120,
       render: (_: unknown, entry: FileEntry) => (
         <Button
           size="small"
-          icon={entry.is_dir ? <FolderOpenOutlined /> : isTauri ? <FolderOpenOutlined /> : <DownloadOutlined />}
+          icon={
+            entry.is_dir ? (
+              <FolderOpenOutlined />
+            ) : isTauri ? (
+              <FolderOpenOutlined />
+            ) : (
+              <DownloadOutlined />
+            )
+          }
           onClick={() => handleOpen(entry)}
         >
-          {entry.is_dir ? "进入" : isTauri ? "打开" : "下载"}
+          {entry.is_dir
+            ? t("files.enter")
+            : isTauri
+              ? t("files.open")
+              : t("files.download")}
         </Button>
       ),
     },
@@ -124,7 +138,7 @@ export function FilesPage() {
           disabled={parts.length === 0}
           onClick={() => load(parentPath)}
         >
-          上级
+          {t("files.up")}
         </Button>
         <Breadcrumb items={breadcrumbItems} />
       </div>
@@ -135,7 +149,7 @@ export function FilesPage() {
           dataSource={entries}
           pagination={false}
           size="middle"
-          locale={{ emptyText: "文件夹为空" }}
+          locale={{ emptyText: t("files.folderEmpty") }}
         />
       </Spin>
     </div>

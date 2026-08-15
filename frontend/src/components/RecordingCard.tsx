@@ -8,9 +8,11 @@ import {
   StopOutlined,
   DeleteOutlined,
 } from "@ant-design/icons";
+import { useEffect, useState } from "react";
 import { StatusBadge } from "./StatusBadge";
 import type { RecordingConfig, RecordingProgress } from "../types";
-import { QUALITY_OPTIONS } from "../types";
+import { api } from "../api/provider";
+import { useI18n } from "../i18n";
 
 interface Props {
   recording: RecordingConfig;
@@ -45,45 +47,69 @@ export function RecordingCard({
   onStopRecording,
   onDelete,
 }: Props) {
-  const qualityLabel =
-    QUALITY_OPTIONS.find((q) => q.value === recording.quality)?.label || "原画";
+  const { t } = useI18n();
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
 
-  const showError = (action: string, e: unknown) => {
-    message.error(`${action}失败: ${e}`);
+  // 解析缩略图地址（server 模式返回 URL，desktop 模式返回 data URL）
+  useEffect(() => {
+    let cancelled = false;
+    if (recording.thumbnail) {
+      api
+        .getThumbnail(recording.thumbnail)
+        .then((u) => {
+          if (!cancelled) setThumbUrl(u);
+        })
+        .catch(() => {
+          if (!cancelled) setThumbUrl(null);
+        });
+    } else {
+      setThumbUrl(null);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [recording.thumbnail]);
+
+  const qualityLabel = t(`quality.${recording.quality}`);
+
+  const showError = (actionKey: string, e: unknown) => {
+    message.error(
+      t("card.opFail", { action: t(`op.${actionKey}`), error: String(e) }),
+    );
   };
 
   const handleToggleMonitor = async () => {
     try {
       await onToggleMonitor(recording.id, !recording.monitor_enabled);
     } catch (e) {
-      showError("操作", e);
+      showError("operation", e);
     }
   };
 
   const handleStartRecord = async () => {
     try {
       await onStartRecording(recording.id);
-      message.success("录制已启动");
+      message.success(t("card.started"));
     } catch (e) {
-      showError("启动录制", e);
+      showError("startRecord", e);
     }
   };
 
   const handleStopRecord = async () => {
     try {
       await onStopRecording(recording.id);
-      message.success("录制已停止");
+      message.success(t("card.stopped"));
     } catch (e) {
-      showError("停止录制", e);
+      showError("stopRecord", e);
     }
   };
 
   const handleDelete = async () => {
     try {
       await onDelete(recording.id);
-      message.success("已删除");
+      message.success(t("card.deleted"));
     } catch (e) {
-      showError("删除", e);
+      showError("delete", e);
     }
   };
 
@@ -92,17 +118,31 @@ export function RecordingCard({
       size="medium"
       hoverable
       style={{ height: "100%" }}
+      cover={
+        thumbUrl ? (
+          <img
+            src={thumbUrl}
+            alt="thumbnail"
+            style={{
+              width: "100%",
+              height: 140,
+              objectFit: "cover",
+              background: "#000",
+            }}
+          />
+        ) : undefined
+      }
       title={
         <Space>
-          <Tag color="blue">{recording.platform || "未识别"}</Tag>
+          <Tag color="blue">{recording.platform || t("card.unknownPlatform")}</Tag>
           <StatusBadge recording={recording} />
         </Space>
       }
       extra={
         recording.monitor_enabled ? (
-          <Tag color="processing">🔔 监控中</Tag>
+          <Tag color="processing">{t("card.monitoring")}</Tag>
         ) : (
-          <Tag>⏸️ 已暂停</Tag>
+          <Tag>{t("card.paused")}</Tag>
         )
       }
     >
@@ -121,20 +161,28 @@ export function RecordingCard({
           textOverflow: "ellipsis",
         }}
       >
-        {recording.title || "等待检测..."}
+        {recording.title || t("card.waitDetect")}
       </div>
 
       <div style={{ marginBottom: 12 }}>
         <Space size="middle" style={{ color: "#6B7280", fontSize: 12 }}>
           <span>📹 {qualityLabel}</span>
           {recording.recording_started_at && (
-            <Tooltip title={`开始: ${new Date(recording.recording_started_at).toLocaleString()}`}>
-              <span>⏱️ {new Date(recording.recording_started_at).toLocaleTimeString()}</span>
+            <Tooltip
+              title={`${t("card.startAt")}: ${new Date(
+                recording.recording_started_at,
+              ).toLocaleString()}`}
+            >
+              <span>
+                ⏱️ {new Date(recording.recording_started_at).toLocaleTimeString()}
+              </span>
             </Tooltip>
           )}
           {recording.schedule.length > 0 && (
-            <Tooltip title="录制时间窗口">
-              <span>⏰ {recording.schedule.map((s) => `${s.start}-${s.end}`).join(", ")}</span>
+            <Tooltip title={t("card.timeWindow")}>
+              <span>
+                ⏰ {recording.schedule.map((s) => `${s.start}-${s.end}`).join(", ")}
+              </span>
             </Tooltip>
           )}
         </Space>
@@ -154,7 +202,12 @@ export function RecordingCard({
           <Space size="middle">
             <span>⏱️ {formatDuration(progress.duration_seconds)}</span>
             <span>📦 {formatSize(progress.file_size_bytes)}</span>
-            <span>⚡ {progress.download_speed_kbps > 0 ? (progress.download_speed_kbps / 1024).toFixed(2) + " MB/s" : "-"}</span>
+            <span>
+              ⚡{" "}
+              {progress.download_speed_kbps > 0
+                ? (progress.download_speed_kbps / 1024).toFixed(2) + " MB/s"
+                : "-"}
+            </span>
           </Space>
         </div>
       )}
@@ -167,7 +220,7 @@ export function RecordingCard({
 
       {recording.is_recording && recording.retry_count > 0 && (
         <div style={{ color: "#D97706", fontSize: 12, marginBottom: 8 }}>
-          🔄 录制失败，第 {recording.retry_count} 次重试中...
+          🔄 {t("card.retryMsg", { n: recording.retry_count })}
         </div>
       )}
 
@@ -178,7 +231,7 @@ export function RecordingCard({
             icon={<PauseCircleOutlined />}
             onClick={handleToggleMonitor}
           >
-            暂停监控
+            {t("card.pauseMonitor")}
           </Button>
         ) : (
           <Button
@@ -188,7 +241,7 @@ export function RecordingCard({
             icon={<PlayCircleOutlined />}
             onClick={handleToggleMonitor}
           >
-            开始监控
+            {t("card.startMonitor")}
           </Button>
         )}
 
@@ -200,7 +253,7 @@ export function RecordingCard({
             icon={<VideoCameraOutlined />}
             onClick={handleStartRecord}
           >
-            开始录制
+            {t("card.startRecording")}
           </Button>
         )}
 
@@ -211,19 +264,19 @@ export function RecordingCard({
             icon={<StopOutlined />}
             onClick={handleStopRecord}
           >
-            停止录制
+            {t("card.stopRecording")}
           </Button>
         )}
 
         <Popconfirm
-          title="确定删除此录制任务？"
+          title={t("card.deleteConfirmTitle")}
           onConfirm={handleDelete}
-          okText="删除"
-          cancelText="取消"
+          okText={t("card.delete")}
+          cancelText={t("card.cancel")}
           okButtonProps={{ danger: true }}
         >
           <Button size="small" icon={<DeleteOutlined />}>
-            删除
+            {t("card.delete")}
           </Button>
         </Popconfirm>
       </Space>

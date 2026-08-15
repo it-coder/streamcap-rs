@@ -90,6 +90,7 @@ pub async fn add_recording(
         error_message: None,
         segment_count: 0,
         retry_count: 0,
+        thumbnail: None,
     };
 
     // 块作用域确保锁守卫在 .await 前释放（否则 future 非 Send）
@@ -430,6 +431,55 @@ pub async fn download_file(
             "Content-Disposition",
             format!("attachment; filename*=UTF-8''{}", encoded),
         )
+        .body(body)
+        .map_err(|e| ApiError(format!("构建响应失败: {}", e)))
+}
+
+/// GET /api/files/raw?path=<path> — 内联返回文件（供 <img>/<video> 预览，沙箱限制在 output_dir 内）
+pub async fn serve_file_inline(
+    State(state): State<Arc<ServerState>>,
+    Query(query): Query<FileDownloadQuery>,
+) -> Result<Response, ApiError> {
+    let root = {
+        let settings = state.app_state.settings.read();
+        PathBuf::from(&settings.output_dir)
+    };
+    let root_abs = canonicalize_path(&root)?;
+    let path_abs = canonicalize_path(&PathBuf::from(&query.path))?;
+
+    if path_abs.is_dir() || !path_abs.starts_with(&root_abs) {
+        return Err(ApiError("非法路径：仅允许访问输出目录内的文件".into()));
+    }
+
+    let content_type = match path_abs
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "jpg" | "jpeg" => "image/jpeg",
+        "png" => "image/png",
+        "webp" => "image/webp",
+        "gif" => "image/gif",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "ts" => "video/mp2t",
+        "mkv" => "video/x-matroska",
+        "mov" => "video/quicktime",
+        "flv" => "video/x-flv",
+        _ => "application/octet-stream",
+    };
+
+    let file = tokio::fs::File::open(&path_abs)
+        .await
+        .map_err(|e| ApiError(format!("打开文件失败: {}", e)))?;
+    let stream = ReaderStream::new(file);
+    let body = Body::from_stream(stream);
+
+    Response::builder()
+        .header("Content-Type", content_type)
+        .header("Content-Disposition", "inline")
         .body(body)
         .map_err(|e| ApiError(format!("构建响应失败: {}", e)))
 }

@@ -620,6 +620,7 @@ async fn run_ffmpeg_recording(
         let mut last_disk_check = tokio::time::Instant::now();
         let mut last_progress_time = tokio::time::Instant::now();
         let mut last_size: u64 = 0;
+        let mut last_thumb_time = tokio::time::Instant::now();
 
         loop {
             // 检查停止信号
@@ -690,6 +691,29 @@ async fn run_ffmpeg_recording(
                     download_speed_kbps: speed_kbps,
                 };
                 broadcaster.broadcast_progress(&progress);
+            }
+
+            // 封面帧快照（每 60 秒）：抓取当前分段首帧作为预览，失败忽略
+            if last_thumb_time.elapsed() >= Duration::from_secs(60) {
+                last_thumb_time = tokio::time::Instant::now();
+                let thumb_path = dir.join(format!("{}_thumb.jpg", recording_id));
+                if ffmpeg::capture_thumbnail(&segment_path, &thumb_path).await.is_ok() {
+                    let updated = {
+                        let mut recordings = app_state.recordings.write();
+                        if let Some(r) = recordings.iter_mut().find(|r| r.id == recording_id) {
+                            r.thumbnail = Some(thumb_path.to_string_lossy().to_string());
+                            r.updated_at = Utc::now();
+                            Some(r.clone())
+                        } else {
+                            None
+                        }
+                    };
+                    if let Some(cfg) = updated {
+                        let _ = app_state.save_recordings().await;
+                        let _ = status_tx.send(cfg.clone());
+                        broadcaster.broadcast_status(&cfg);
+                    }
+                }
             }
 
             // 检查 FFmpeg 进程状态

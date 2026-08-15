@@ -35,6 +35,8 @@ export interface ApiProvider {
   // 文件浏览
   listFiles(dir?: string): Promise<FileEntry[]>;
   openFile(path: string): Promise<void>;
+  // 返回可直接用于 <img>/<video> src 的缩略图地址（server 模式返回 URL，desktop 模式返回 data URL）
+  getThumbnail(path: string): Promise<string>;
 
   // 事件订阅 — 返回取消订阅函数
   onStatusChange(callback: (status: RecordingConfig) => void): Promise<() => void>;

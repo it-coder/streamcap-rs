@@ -15,6 +15,7 @@ import {
 import { LinkOutlined, PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
 import type { VideoQuality, OutputFormat, RecordingConfig, TimeRange } from "../types";
 import { QUALITY_OPTIONS, FORMAT_OPTIONS, PLATFORM_PATTERNS } from "../types";
+import { useI18n } from "../i18n";
 
 interface Props {
   onAdd: (
@@ -27,6 +28,7 @@ interface Props {
 }
 
 export function AddTask({ onAdd, onSuccess }: Props) {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const [platformHint, setPlatformHint] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -38,7 +40,7 @@ export function AddTask({ onAdd, onSuccess }: Props) {
       return;
     }
     const found = PLATFORM_PATTERNS.find((p) => url.includes(p.pattern));
-    setPlatformHint(found ? `${found.icon} ${found.label}` : "🔗 自定义流 / M3U8 URL");
+    setPlatformHint(found ? `${found.icon} ${t(`platform.${found.key}`)}` : t("add.customStream"));
   };
 
   const handleSubmit = async (values: {
@@ -62,12 +64,12 @@ export function AddTask({ onAdd, onSuccess }: Props) {
           : undefined;
 
       await onAdd(values.url, values.monitor, values.quality, schedule);
-      message.success("任务已添加");
+      message.success(t("add.success"));
       form.resetFields();
       setPlatformHint("");
       onSuccess();
     } catch (e) {
-      message.error(`添加失败: ${e}`);
+      message.error(t("add.fail", { error: String(e) }));
     } finally {
       setSubmitting(false);
     }
@@ -86,34 +88,44 @@ export function AddTask({ onAdd, onSuccess }: Props) {
         }}
       >
         <Form.Item
-          label="直播间 URL"
+          label={t("add.urlLabel")}
           name="url"
-          rules={[{ required: true, message: "请输入直播间 URL" }]}
+          rules={[{ required: true, message: t("add.urlRequired") }]}
           extra={platformHint}
         >
           <Input
             prefix={<LinkOutlined />}
-            placeholder="例如: https://live.bilibili.com/12345"
+            placeholder={t("add.urlPlaceholder")}
             onChange={handleUrlChange}
           />
         </Form.Item>
 
         <Space style={{ display: "flex", marginBottom: 0 }} size="large">
-          <Form.Item label="视频质量" name="quality" style={{ flex: 1, minWidth: 160 }}>
-            <Select options={QUALITY_OPTIONS} />
+          <Form.Item label={t("add.quality")} name="quality" style={{ flex: 1, minWidth: 160 }}>
+            <Select
+              options={QUALITY_OPTIONS.map((q) => ({
+                value: q.value,
+                label: t(`quality.${q.value}`),
+              }))}
+            />
           </Form.Item>
 
-          <Form.Item label="输出格式" name="format" style={{ flex: 1, minWidth: 160 }}>
-            <Select options={FORMAT_OPTIONS} />
+          <Form.Item label={t("add.format")} name="format" style={{ flex: 1, minWidth: 160 }}>
+            <Select
+              options={FORMAT_OPTIONS.map((f) => ({
+                value: f.value,
+                label: t(`format.${f.value}`),
+              }))}
+            />
           </Form.Item>
         </Space>
 
         <Card
           type="inner"
-          title="录制时间窗口（可选）"
+          title={t("add.timeWindowTitle")}
           style={{ marginBottom: 16 }}
           size="small"
-          extra="留空 = 全天录制"
+          extra={t("add.timeWindowHint")}
         >
           <Form.List name="schedule">
             {(fields, { add, remove }) => (
@@ -127,7 +139,7 @@ export function AddTask({ onAdd, onSuccess }: Props) {
                       <TimePicker.RangePicker
                         format="HH:mm"
                         minuteStep={5}
-                        placeholder={["开始", "结束"]}
+                        placeholder={[t("add.start"), t("add.end")]}
                       />
                     </Form.Item>
                     <MinusCircleOutlined
@@ -143,20 +155,20 @@ export function AddTask({ onAdd, onSuccess }: Props) {
                   icon={<PlusOutlined />}
                   size="small"
                 >
-                  添加时间窗口
+                  {t("add.addTimeWindow")}
                 </Button>
               </>
             )}
           </Form.List>
         </Card>
 
-        <Form.Item label="添加后立即开始监控" name="monitor" valuePropName="checked">
+        <Form.Item label={t("add.monitorNow")} name="monitor" valuePropName="checked">
           <Switch />
         </Form.Item>
 
         <Form.Item>
           <Button type="primary" htmlType="submit" block loading={submitting}>
-            确认添加
+            {t("add.confirm")}
           </Button>
         </Form.Item>
       </Form>

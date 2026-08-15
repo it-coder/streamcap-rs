@@ -409,3 +409,38 @@ pub fn check_ffmpeg_available() -> Result<String, String> {
         Err("FFmpeg 不可用".to_string())
     }
 }
+
+/// 抓取封面帧：从录制输出文件中抽取一帧作为缩略图（best-effort）
+///
+/// 用于录制中定期生成封面预览。从本地分段文件读取第一帧，不消耗额外网络带宽。
+/// TS 等流式容器可正常抽取；MP4 等需 moov 原子的容器在录制中（未 finalize）可能失败，调用方应忽略错误。
+pub async fn capture_thumbnail(input: &PathBuf, output: &PathBuf) -> Result<(), String> {
+    let args: Vec<String> = vec![
+        "-y".into(),
+        "-loglevel".into(), "error".into(),
+        "-rw_timeout".into(), "15000000".into(),
+        "-fflags".into(), "+discardcorrupt".into(),
+        "-t".into(), "5".into(),
+        "-i".into(), input.to_string_lossy().into(),
+        "-frames:v".into(), "1".into(),
+        "-q:v".into(), "3".into(),
+        output.to_string_lossy().into(),
+    ];
+
+    let result = tokio::time::timeout(
+        Duration::from_secs(15),
+        Command::new("ffmpeg")
+            .args(&args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+    )
+    .await;
+
+    match result {
+        Ok(Ok(status)) if status.success() => Ok(()),
+        Ok(Ok(status)) => Err(format!("封面帧抓取失败, exit code: {:?}", status.code())),
+        Ok(Err(e)) => Err(format!("封面帧抓取失败: {}", e)),
+        Err(_) => Err("封面帧抓取超时".to_string()),
+    }
+}

@@ -6,6 +6,7 @@ import { SearchOutlined } from "@ant-design/icons";
 import { RecordingCard } from "../components/RecordingCard";
 import type { UseRecordingsResult } from "../hooks/useRecordings";
 import type { RecordingConfig } from "../types";
+import { useI18n } from "../i18n";
 
 /** 推导录制状态 key（与 StatusBadge 保持一致） */
 function statusKey(r: RecordingConfig): string {
@@ -17,22 +18,13 @@ function statusKey(r: RecordingConfig): string {
   return "offline";
 }
 
-const STATUS_FILTERS = [
-  { value: "all", label: "全部" },
-  { value: "recording", label: "录制中" },
-  { value: "live", label: "直播中" },
-  { value: "monitoring", label: "监控中" },
-  { value: "retrying", label: "重试中" },
-  { value: "error", label: "错误" },
-  { value: "offline", label: "已停止" },
-];
-
 interface Props {
   recordingsHook: UseRecordingsResult;
   onNavigateToAdd: () => void;
 }
 
 export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
+  const { t } = useI18n();
   const {
     recordings,
     progressMap,
@@ -45,6 +37,16 @@ export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
 
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  const statusFilters = [
+    { value: "all", label: t("filter.all") },
+    { value: "recording", label: t("filter.recording") },
+    { value: "live", label: t("filter.live") },
+    { value: "monitoring", label: t("filter.monitoring") },
+    { value: "retrying", label: t("filter.retrying") },
+    { value: "error", label: t("filter.error") },
+    { value: "offline", label: t("filter.offline") },
+  ];
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
@@ -74,9 +76,9 @@ export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={
           <span>
-            暂无录制任务
+            {t("list.emptyTitle")}
             <br />
-            <a onClick={onNavigateToAdd}>点击添加任务开始监控直播</a>
+            <a onClick={onNavigateToAdd}>{t("list.emptyAction")}</a>
           </span>
         }
       />
@@ -92,7 +94,7 @@ export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
         <Input
           allowClear
           prefix={<SearchOutlined />}
-          placeholder="搜索主播 / 标题 / 链接 / 平台"
+          placeholder={t("list.searchPlaceholder")}
           value={keyword}
           onChange={(e) => setKeyword(e.target.value)}
           style={{ width: 280 }}
@@ -100,13 +102,13 @@ export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
         <Select
           value={statusFilter}
           onChange={setStatusFilter}
-          options={STATUS_FILTERS}
+          options={statusFilters}
           style={{ width: 140 }}
         />
       </Space>
 
       {filtered.length === 0 ? (
-        <Empty description="没有匹配的录制任务" />
+        <Empty description={t("list.noMatch")} />
       ) : (
         <Row gutter={[16, 16]}>
           {filtered.map((r: RecordingConfig) => (

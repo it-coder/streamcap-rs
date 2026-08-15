@@ -11,10 +11,12 @@ import { Modal, Spin, Typography, Progress } from "antd";
 import { LoadingOutlined, CheckCircleOutlined } from "@ant-design/icons";
 import { api } from "../api/provider";
 import type { ShutdownPayload } from "../types";
+import { useI18n } from "../i18n";
 
 const { Text } = Typography;
 
 export function ShutdownOverlay() {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
   const [payload, setPayload] = useState<ShutdownPayload | null>(null);
 
@@ -70,12 +72,12 @@ export function ShutdownOverlay() {
 
         <div style={{ marginTop: 16, marginBottom: 8 }}>
           <Text strong style={{ fontSize: 16 }}>
-            {isDone ? "安全关闭完成" : "正在安全关闭应用"}
+            {isDone ? t("shutdown.done") : t("shutdown.closing")}
           </Text>
         </div>
 
         <Text type="secondary" style={{ fontSize: 13 }}>
-          {payload?.message || "请稍候..."}
+          {payload?.message || t("shutdown.wait")}
         </Text>
 
         <Progress
@@ -91,7 +93,7 @@ export function ShutdownOverlay() {
             type="secondary"
             style={{ fontSize: 12, display: "block", marginTop: 12 }}
           >
-            检测到 {payload.activeCount} 个录制任务正在运行，正在发送停止信号并等待 FFmpeg 优雅退出...
+            {t("shutdown.active", { n: payload.activeCount })}
           </Text>
         )}
       </div>

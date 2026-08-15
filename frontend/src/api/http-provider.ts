@@ -173,6 +173,11 @@ export class HttpApiProvider implements ApiProvider {
     URL.revokeObjectURL(url);
   }
 
+  async getThumbnail(path: string): Promise<string> {
+    // server 模式：返回内联预览 URL（同源）
+    return `/api/files/raw?path=${encodeURIComponent(path)}`;
+  }
+
   // ========================================
   // WebSocket 事件订阅
   // ========================================
