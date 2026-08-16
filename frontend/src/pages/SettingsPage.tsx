@@ -1,4 +1,4 @@
-// 设置页 — 输出目录、检测间隔、磁盘阈值、文件夹规则、代理
+// 设置页 — 手风琴分组：存储与目录 / 默认录制参数 / 失败重试 / 格式转换 / 网络与通知 / 平台 Cookie
 
 import { useEffect } from "react";
 import {
@@ -9,6 +9,7 @@ import {
   Button,
   Card,
   Select,
+  Collapse,
   message,
   Spin,
 } from "antd";
@@ -20,6 +21,22 @@ const { TextArea } = Input;
 
 /** 需要配置 Cookie 的平台 key（与后端 detect_platform 对应，label 走 i18n platform.*） */
 const COOKIE_PLATFORM_KEYS = PLATFORM_PATTERNS.map((p) => p.key);
+
+/** 组内小标题：在不新增分组的前提下保持「目录结构」「分段」等子项的可读性 */
+function SubTitle({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        fontWeight: 600,
+        fontSize: 13,
+        color: "#555",
+        margin: "8px 0 4px",
+      }}
+    >
+      {text}
+    </div>
+  );
+}
 
 interface Props {
   settings: AppSettings | null;
@@ -59,39 +76,82 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
     );
   }
 
-  return (
-    <Card style={{ maxWidth: 600 }}>
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSubmit}
-        initialValues={settings}
-      >
-        <Form.Item
-          label={t("settings.outputDir")}
-          name="output_dir"
-          tooltip={t("settings.outputDirTooltip")}
-        >
-          <Input placeholder={t("settings.outputDirPlaceholder")} />
-        </Form.Item>
+  // 平台 Cookie：每个平台一个嵌套折叠面板，默认全部折叠，避免 9 个文本框一次性铺开
+  const cookieItems = COOKIE_PLATFORM_KEYS.map((key) => ({
+    key,
+    label: t(`platform.${key}`),
+    children: (
+      <Form.Item name={["cookies_by_platform", key]} noStyle>
+        <TextArea
+          rows={2}
+          placeholder={t("settings.cookiePlaceholder", {
+            label: t(`platform.${key}`),
+          })}
+          autoSize={{ minRows: 1, maxRows: 3 }}
+        />
+      </Form.Item>
+    ),
+  }));
 
-        <Form.Item
-          label={t("settings.detectInterval")}
-          name="loop_interval_seconds"
-          tooltip={t("settings.detectIntervalTooltip")}
-        >
-          <InputNumber min={30} max={3600} style={{ width: "100%" }} />
-        </Form.Item>
+  const collapseItems = [
+    {
+      key: "storage",
+      label: t("settings.groupStorage"),
+      children: (
+        <>
+          <Form.Item
+            label={t("settings.outputDir")}
+            name="output_dir"
+            tooltip={t("settings.outputDirTooltip")}
+          >
+            <Input placeholder={t("settings.outputDirPlaceholder")} />
+          </Form.Item>
 
-        <Form.Item
-          label={t("settings.diskThreshold")}
-          name="recording_space_threshold_gb"
-          tooltip={t("settings.diskThresholdTooltip")}
-        >
-          <InputNumber min={0} style={{ width: "100%" }} />
-        </Form.Item>
+          <Form.Item
+            label={t("settings.diskThreshold")}
+            name="recording_space_threshold_gb"
+            tooltip={t("settings.diskThresholdTooltip")}
+          >
+            <InputNumber min={0} style={{ width: "100%" }} />
+          </Form.Item>
 
-        <Card type="inner" title={t("settings.defaults")} style={{ marginBottom: 16 }}>
+          <SubTitle text={t("settings.dirStructure")} />
+          <Form.Item label={t("settings.byPlatform")} name="folder_by_platform" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item label={t("settings.byAnchor")} name="folder_by_anchor" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item label={t("settings.byDate")} name="folder_by_date" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item label={t("settings.byTitle")} name="folder_by_title" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+
+          <SubTitle text={t("settings.segment")} />
+          <Form.Item
+            label={t("settings.segmentDuration")}
+            name="segment_duration_seconds"
+            tooltip={t("settings.segmentDurationTooltip")}
+          >
+            <InputNumber min={0} max={86400} style={{ width: "100%" }} placeholder="1800" />
+          </Form.Item>
+        </>
+      ),
+    },
+    {
+      key: "recording",
+      label: t("settings.defaults"),
+      children: (
+        <>
+          <Form.Item
+            label={t("settings.detectInterval")}
+            name="loop_interval_seconds"
+            tooltip={t("settings.detectIntervalTooltip")}
+          >
+            <InputNumber min={30} max={3600} style={{ width: "100%" }} />
+          </Form.Item>
           <Form.Item label={t("settings.defaultQuality")} name="default_quality">
             <Select
               options={QUALITY_OPTIONS.map((q) => ({
@@ -112,34 +172,14 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
               }))}
             />
           </Form.Item>
-        </Card>
-
-        <Card type="inner" title={t("settings.dirStructure")} style={{ marginBottom: 16 }}>
-          <Form.Item label={t("settings.byPlatform")} name="folder_by_platform" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Form.Item label={t("settings.byAnchor")} name="folder_by_anchor" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Form.Item label={t("settings.byDate")} name="folder_by_date" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Form.Item label={t("settings.byTitle")} name="folder_by_title" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-        </Card>
-
-        <Card type="inner" title={t("settings.segment")} style={{ marginBottom: 16 }}>
-          <Form.Item
-            label={t("settings.segmentDuration")}
-            name="segment_duration_seconds"
-            tooltip={t("settings.segmentDurationTooltip")}
-          >
-            <InputNumber min={0} max={86400} style={{ width: "100%" }} placeholder="1800" />
-          </Form.Item>
-        </Card>
-
-        <Card type="inner" title={t("settings.retry")} style={{ marginBottom: 16 }}>
+        </>
+      ),
+    },
+    {
+      key: "retry",
+      label: t("settings.retry"),
+      children: (
+        <>
           <Form.Item
             label={t("settings.maxRetries")}
             name="max_retries"
@@ -154,9 +194,14 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
           >
             <InputNumber min={1} max={120} style={{ width: "100%" }} />
           </Form.Item>
-        </Card>
-
-        <Card type="inner" title={t("settings.conversion")} style={{ marginBottom: 16 }}>
+        </>
+      ),
+    },
+    {
+      key: "conversion",
+      label: t("settings.conversion"),
+      children: (
+        <>
           <Form.Item
             label={t("settings.enableConversion")}
             name="enable_conversion"
@@ -186,9 +231,14 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
           >
             <Switch disabled={!enableConversion} />
           </Form.Item>
-        </Card>
-
-        <Card type="inner" title={t("settings.proxy")} style={{ marginBottom: 16 }}>
+        </>
+      ),
+    },
+    {
+      key: "network",
+      label: t("settings.groupNetwork"),
+      children: (
+        <>
           <Form.Item label={t("settings.enableProxy")} name="enable_proxy" valuePropName="checked">
             <Switch />
           </Form.Item>
@@ -198,9 +248,6 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
               disabled={!enableProxy}
             />
           </Form.Item>
-        </Card>
-
-        <Card type="inner" title={t("settings.webhook")} style={{ marginBottom: 16 }}>
           <Form.Item
             label={t("settings.webhookUrl")}
             name="webhook_url"
@@ -208,36 +255,48 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
           >
             <Input placeholder={t("settings.webhookUrlPlaceholder")} allowClear />
           </Form.Item>
-        </Card>
+        </>
+      ),
+    },
+    {
+      key: "cookie",
+      label: t("settings.cookie"),
+      extra: t("settings.cookieHint"),
+      children: (
+        <Collapse
+          items={cookieItems}
+          size="small"
+          defaultActiveKey={[]}
+          ghost
+        />
+      ),
+    },
+  ];
 
-        <Card
-          type="inner"
-          title={t("settings.cookie")}
-          style={{ marginBottom: 16 }}
-          extra={t("settings.cookieHint")}
+  return (
+    <Card style={{ maxWidth: 600 }}>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleSubmit}
+        initialValues={settings}
+      >
+        <Collapse items={collapseItems} defaultActiveKey={["storage", "recording"]} />
+
+        <div
+          style={{
+            position: "sticky",
+            bottom: 0,
+            marginTop: 16,
+            padding: "12px 0 0",
+            background: "#fff",
+            borderTop: "1px solid #f0f0f0",
+          }}
         >
-          {COOKIE_PLATFORM_KEYS.map((key) => (
-            <Form.Item
-              key={key}
-              label={t(`platform.${key}`)}
-              name={["cookies_by_platform", key]}
-            >
-              <TextArea
-                rows={2}
-                placeholder={t("settings.cookiePlaceholder", {
-                  label: t(`platform.${key}`),
-                })}
-                autoSize={{ minRows: 1, maxRows: 3 }}
-              />
-            </Form.Item>
-          ))}
-        </Card>
-
-        <Form.Item>
           <Button type="primary" htmlType="submit" block>
             {t("settings.save")}
           </Button>
-        </Form.Item>
+        </div>
       </Form>
     </Card>
   );

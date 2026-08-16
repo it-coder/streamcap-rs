@@ -158,6 +158,8 @@ const zh: Dict = {
   "settings.save": "保存设置",
   "settings.saved": "设置已保存",
   "settings.saveFail": "保存失败: {error}",
+  "settings.groupStorage": "存储与目录",
+  "settings.groupNetwork": "网络与通知",
 
   // 语言
   "lang.label": "语言",
@@ -375,6 +377,8 @@ const en: Dict = {
   "settings.save": "Save Settings",
   "settings.saved": "Settings saved",
   "settings.saveFail": "Save failed: {error}",
+  "settings.groupStorage": "Storage & Directory",
+  "settings.groupNetwork": "Network & Notifications",
 
   "lang.label": "Language",
   "lang.zh": "中文",
