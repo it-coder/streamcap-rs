@@ -54,6 +54,7 @@ pub fn build_router(state: Arc<ServerState>, static_dir: &str) -> Router {
             post(handlers::start_recording).delete(handlers::stop_recording),
         )
         .route("/api/recordings/:id/status", get(handlers::get_recording_status))
+        .route("/api/cleanup", post(handlers::cleanup))
         // ========================================
         // 设置 API
         // ========================================

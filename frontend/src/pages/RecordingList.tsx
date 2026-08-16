@@ -5,7 +5,7 @@ import { Row, Col, Empty, Spin, Input, Select, Space } from "antd";
 import { SearchOutlined } from "@ant-design/icons";
 import { RecordingCard } from "../components/RecordingCard";
 import type { UseRecordingsResult } from "../hooks/useRecordings";
-import type { RecordingConfig } from "../types";
+import type { AppSettings, RecordingConfig } from "../types";
 import { useI18n } from "../i18n";
 
 /** 推导录制状态 key（与 StatusBadge 保持一致） */
@@ -21,9 +21,10 @@ function statusKey(r: RecordingConfig): string {
 interface Props {
   recordingsHook: UseRecordingsResult;
   onNavigateToAdd: () => void;
+  settings?: AppSettings | null;
 }
 
-export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
+export function RecordingList({ recordingsHook, onNavigateToAdd, settings }: Props) {
   const { t } = useI18n();
   const {
     recordings,
@@ -34,6 +35,10 @@ export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
     stopRecording,
     removeRecording,
   } = recordingsHook;
+
+  // 当前正在录制的路数 + 最大并发（用于状态徽章判断"排队中"）
+  const activeCount = recordings.filter((r) => r.is_recording).length;
+  const maxConcurrent = settings?.max_concurrent_recordings ?? 0;
 
   const [keyword, setKeyword] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -116,6 +121,8 @@ export function RecordingList({ recordingsHook, onNavigateToAdd }: Props) {
               <RecordingCard
                 recording={r}
                 progress={progressMap[r.id]}
+                activeCount={activeCount}
+                maxConcurrent={maxConcurrent}
                 onToggleMonitor={toggleMonitor}
                 onStartRecording={startRecording}
                 onStopRecording={stopRecording}

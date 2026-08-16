@@ -15,6 +15,8 @@ export interface ApiProvider {
     url: string;
     monitorEnabled?: boolean;
     quality?: VideoQuality;
+    scheduledStart?: string | null;
+    recurrence?: string | null;
   }): Promise<RecordingConfig>;
   removeRecording(id: string): Promise<void>;
   updateRecording(config: RecordingConfig): Promise<void>;
@@ -47,6 +49,9 @@ export interface ApiProvider {
   // 后处理任务
   startPostProcess(req: PostProcessRequest): Promise<PostProcessJob>;
   getPostProcess(id: string): Promise<PostProcessJob | null>;
+
+  // 磁盘自动清理（立即执行一次，返回删除条数）
+  runCleanup(): Promise<number>;
 
   // 事件订阅 — 返回取消订阅函数
   onStatusChange(callback: (status: RecordingConfig) => void): Promise<() => void>;

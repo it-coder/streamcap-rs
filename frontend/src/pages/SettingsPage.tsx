@@ -1,6 +1,6 @@
 // 设置页 — 手风琴分组：存储与目录 / 默认录制参数 / 失败重试 / 格式转换 / 网络与通知 / 平台 Cookie
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Form,
   Input,
@@ -16,6 +16,7 @@ import {
 import type { AppSettings } from "../types";
 import { FORMAT_OPTIONS, QUALITY_OPTIONS, PLATFORM_PATTERNS } from "../types";
 import { useI18n } from "../i18n";
+import { api } from "../api/provider";
 
 const { TextArea } = Input;
 
@@ -49,6 +50,23 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
   const [form] = Form.useForm<AppSettings>();
   const enableConversion = Form.useWatch("enable_conversion", form);
   const enableProxy = Form.useWatch("enable_proxy", form);
+  const [cleaning, setCleaning] = useState(false);
+
+  const handleCleanup = async () => {
+    try {
+      setCleaning(true);
+      const deleted = await api.runCleanup();
+      if (deleted > 0) {
+        message.success(t("settings.cleanupDone", { n: deleted }));
+      } else {
+        message.info(t("settings.cleanupNothing"));
+      }
+    } catch (e) {
+      message.error(t("settings.cleanupFail", { error: String(e) }));
+    } finally {
+      setCleaning(false);
+    }
+  };
 
   useEffect(() => {
     if (settings) {
@@ -114,6 +132,32 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
           >
             <InputNumber min={0} style={{ width: "100%" }} />
           </Form.Item>
+
+          <SubTitle text={t("settings.concurrency")} />
+          <Form.Item
+            label={t("settings.maxConcurrent")}
+            name="max_concurrent_recordings"
+            tooltip={t("settings.maxConcurrentTooltip")}
+          >
+            <InputNumber min={0} max={100} style={{ width: "100%" }} placeholder="3" />
+          </Form.Item>
+
+          <SubTitle text={t("settings.cleanup")} />
+          <Form.Item
+            label={t("settings.autoCleanup")}
+            name="auto_cleanup"
+            valuePropName="checked"
+            tooltip={t("settings.autoCleanupTooltip")}
+          >
+            <Switch />
+          </Form.Item>
+          <Button
+            loading={cleaning}
+            onClick={handleCleanup}
+            style={{ marginBottom: 8 }}
+          >
+            {t("settings.cleanupNow")}
+          </Button>
 
           <SubTitle text={t("settings.dirStructure")} />
           <Form.Item label={t("settings.byPlatform")} name="folder_by_platform" valuePropName="checked">

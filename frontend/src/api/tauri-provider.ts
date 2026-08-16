@@ -31,11 +31,15 @@ export class TauriApiProvider implements ApiProvider {
     url: string;
     monitorEnabled?: boolean;
     quality?: VideoQuality;
+    scheduledStart?: string | null;
+    recurrence?: string | null;
   }): Promise<RecordingConfig> {
     return invoke<RecordingConfig>("add_recording", {
       url: params.url,
       monitorEnabled: params.monitorEnabled ?? true,
       quality: params.quality ?? "OD",
+      scheduledStart: params.scheduledStart ?? null,
+      recurrence: params.recurrence ?? null,
     });
   }
 
@@ -131,6 +135,14 @@ export class TauriApiProvider implements ApiProvider {
       return await invoke<PostProcessJob>("get_postprocess", { id });
     } catch {
       return null;
+    }
+  }
+
+  async runCleanup(): Promise<number> {
+    try {
+      return await invoke<number>("run_cleanup");
+    } catch {
+      return 0;
     }
   }
 

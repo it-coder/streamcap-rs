@@ -17,6 +17,8 @@ import { useI18n } from "../i18n";
 interface Props {
   recording: RecordingConfig;
   progress?: RecordingProgress;
+  activeCount?: number;
+  maxConcurrent?: number;
   onToggleMonitor: (id: string, enabled: boolean) => Promise<void>;
   onStartRecording: (id: string) => Promise<void>;
   onStopRecording: (id: string) => Promise<void>;
@@ -42,6 +44,8 @@ function formatSize(bytes: number): string {
 export function RecordingCard({
   recording,
   progress,
+  activeCount,
+  maxConcurrent,
   onToggleMonitor,
   onStartRecording,
   onStopRecording,
@@ -135,7 +139,11 @@ export function RecordingCard({
       title={
         <Space>
           <Tag color="blue">{recording.platform || t("card.unknownPlatform")}</Tag>
-          <StatusBadge recording={recording} />
+          <StatusBadge
+            recording={recording}
+            activeCount={activeCount}
+            maxConcurrent={maxConcurrent}
+          />
         </Space>
       }
       extra={
@@ -185,6 +193,14 @@ export function RecordingCard({
               </span>
             </Tooltip>
           )}
+          {recording.scheduled_start &&
+            new Date(recording.scheduled_start).getTime() > Date.now() && (
+              <Tooltip title={t("card.scheduledStart")}>
+                <span>
+                  🕒 {new Date(recording.scheduled_start).toLocaleString()}
+                </span>
+              </Tooltip>
+            )}
         </Space>
       </div>
 

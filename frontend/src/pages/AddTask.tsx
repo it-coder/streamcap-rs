@@ -10,6 +10,7 @@ import {
   Card,
   Space,
   TimePicker,
+  DatePicker,
   message,
 } from "antd";
 import { LinkOutlined, PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
@@ -23,6 +24,8 @@ interface Props {
     monitorEnabled: boolean,
     quality: VideoQuality,
     schedule?: TimeRange[],
+    scheduledStart?: string | null,
+    recurrence?: string | null,
   ) => Promise<RecordingConfig>;
   onSuccess: () => void;
 }
@@ -49,6 +52,8 @@ export function AddTask({ onAdd, onSuccess }: Props) {
     format: OutputFormat;
     monitor: boolean;
     schedule?: { range: [any, any] }[];
+    scheduledStart?: any;
+    recurrence?: string;
   }) => {
     setSubmitting(true);
     try {
@@ -63,7 +68,20 @@ export function AddTask({ onAdd, onSuccess }: Props) {
               }))
           : undefined;
 
-      await onAdd(values.url, values.monitor, values.quality, schedule);
+      // 定时开始：Dayjs → ISO 字符串（UTC）
+      const scheduledStart: string | null = values.scheduledStart
+        ? values.scheduledStart.toISOString()
+        : null;
+      const recurrence: string | null = values.recurrence || "once";
+
+      await onAdd(
+        values.url,
+        values.monitor,
+        values.quality,
+        schedule,
+        scheduledStart,
+        recurrence,
+      );
       message.success(t("add.success"));
       form.resetFields();
       setPlatformHint("");
@@ -85,6 +103,7 @@ export function AddTask({ onAdd, onSuccess }: Props) {
           quality: "OD" as VideoQuality,
           format: "ts" as OutputFormat,
           monitor: true,
+          recurrence: "once",
         }}
       >
         <Form.Item
@@ -165,6 +184,32 @@ export function AddTask({ onAdd, onSuccess }: Props) {
         <Form.Item label={t("add.monitorNow")} name="monitor" valuePropName="checked">
           <Switch />
         </Form.Item>
+
+        <Card
+          type="inner"
+          title={t("add.scheduleRecordTitle")}
+          style={{ marginBottom: 16 }}
+          size="small"
+          extra={t("add.scheduleRecordHint")}
+        >
+          <Form.Item label={t("add.scheduledStart")} name="scheduledStart">
+            <DatePicker
+              showTime
+              format="YYYY-MM-DD HH:mm"
+              placeholder={t("add.scheduledStartPlaceholder")}
+              style={{ width: "100%" }}
+            />
+          </Form.Item>
+          <Form.Item label={t("add.recurrence")} name="recurrence">
+            <Select
+              options={[
+                { value: "once", label: t("add.recurrenceOnce") },
+                { value: "daily", label: t("add.recurrenceDaily") },
+                { value: "weekly", label: t("add.recurrenceWeekly") },
+              ]}
+            />
+          </Form.Item>
+        </Card>
 
         <Form.Item>
           <Button type="primary" htmlType="submit" block loading={submitting}>

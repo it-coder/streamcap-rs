@@ -201,6 +201,20 @@ impl TimeRange {
     }
 }
 
+/// 定时录制的重复方式
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Recurrence {
+    /// 仅一次（不重复）
+    #[serde(rename = "once")]
+    Once,
+    /// 每天重复
+    #[serde(rename = "daily")]
+    Daily,
+    /// 每周重复（按 7 天周期）
+    #[serde(rename = "weekly")]
+    Weekly,
+}
+
 /// 录制任务配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordingConfig {
@@ -264,6 +278,12 @@ pub struct RecordingConfig {
     /// 封面帧快照路径（录制中定期抓取，可能为 null）
     #[serde(default)]
     pub thumbnail: Option<String>,
+    /// 定时开始录制（绝对时间 UTC）；到点前不自动开录（None=立即按现有逻辑）
+    #[serde(default)]
+    pub scheduled_start: Option<DateTime<Utc>>,
+    /// 录制完成后的重复方式（once=不重复；daily/weekly 会自动排期下一次）
+    #[serde(default)]
+    pub recurrence: Option<Recurrence>,
 }
 
 /// 文件条目（文件浏览 API 返回）
@@ -335,6 +355,9 @@ pub struct RecordingHistoryEntry {
     /// 封面帧快照路径
     #[serde(default)]
     pub thumbnail: Option<String>,
+    /// 该次录制产出文件所在目录（用于自动清理时整体删除）
+    #[serde(default)]
+    pub recording_dir: Option<String>,
     /// 错误信息（失败时）
     #[serde(default)]
     pub error_message: Option<String>,
@@ -485,6 +508,12 @@ pub struct AppSettings {
     /// 事件通知 Webhook URL（录制开始/完成/失败时 POST JSON；为空则不发送）
     #[serde(default)]
     pub webhook_url: Option<String>,
+    /// 最大同时录制路数（0 表示不限制）
+    #[serde(default = "default_max_concurrent")]
+    pub max_concurrent_recordings: u32,
+    /// 磁盘空间不足时自动清理最旧的已完成录制（需配合 recording_space_threshold_gb > 0）
+    #[serde(default)]
+    pub auto_cleanup: bool,
 }
 
 fn default_output_dir() -> String {
@@ -509,6 +538,10 @@ fn default_max_retries() -> u32 {
 
 fn default_retry_delay() -> u64 {
     10
+}
+
+fn default_max_concurrent() -> u32 {
+    3
 }
 
 /// 获取默认下载目录
@@ -540,6 +573,8 @@ impl Default for AppSettings {
             max_retries: 3,
             retry_delay_seconds: 10,
             webhook_url: None,
+            max_concurrent_recordings: 3,
+            auto_cleanup: false,
         }
     }
 }
@@ -595,6 +630,11 @@ impl AppSettings {
             if !u.trim().is_empty() && !is_http_url(u) {
                 return Err("Webhook 地址必须是 http(s) URL".to_string());
             }
+        }
+
+        // 并发上限：0 表示不限制，给一个宽松上限避免误填
+        if self.max_concurrent_recordings > 100 {
+            return Err("最大同时录制路数不能超过 100".to_string());
         }
 
         Ok(())

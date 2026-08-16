@@ -13,6 +13,7 @@ pub mod broadcaster;
 pub mod disk;
 pub mod notifier;
 pub mod jobs;
+pub mod cleanup;
 
 #[cfg(feature = "desktop")]
 pub mod commands;

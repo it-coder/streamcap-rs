@@ -135,6 +135,7 @@ function AppContent() {
             <RecordingList
               recordingsHook={recordingsHook}
               onNavigateToAdd={() => setCurrentPage("add")}
+              settings={settingsHook.settings}
             />
           )}
           {currentPage === "add" && (

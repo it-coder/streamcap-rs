@@ -92,6 +92,7 @@ fn main() {
             commands::history::delete_history,
             commands::postprocess::start_postprocess,
             commands::postprocess::get_postprocess,
+            commands::cleanup::run_cleanup,
         ])
         .run(tauri::generate_context!())
         .expect("error while running streamcap-rs");

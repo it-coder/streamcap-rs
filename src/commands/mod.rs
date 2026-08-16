@@ -5,3 +5,4 @@ pub mod settings;
 pub mod files;
 pub mod history;
 pub mod postprocess;
+pub mod cleanup;

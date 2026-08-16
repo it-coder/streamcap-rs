@@ -64,6 +64,8 @@ export class HttpApiProvider implements ApiProvider {
     url: string;
     monitorEnabled?: boolean;
     quality?: VideoQuality;
+    scheduledStart?: string | null;
+    recurrence?: string | null;
   }): Promise<RecordingConfig> {
     return this.fetchJson<RecordingConfig>("/api/recordings", {
       method: "POST",
@@ -71,6 +73,8 @@ export class HttpApiProvider implements ApiProvider {
         url: params.url,
         monitor_enabled: params.monitorEnabled ?? true,
         quality: params.quality ?? "OD",
+        scheduled_start: params.scheduledStart ?? null,
+        recurrence: params.recurrence ?? null,
       }),
     });
   }
@@ -213,6 +217,13 @@ export class HttpApiProvider implements ApiProvider {
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
+  }
+
+  async runCleanup(): Promise<number> {
+    const res = await this.fetchJson<{ deleted: number }>("/api/cleanup", {
+      method: "POST",
+    });
+    return res.deleted;
   }
 
   // ========================================

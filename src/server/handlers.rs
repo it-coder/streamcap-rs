@@ -97,6 +97,8 @@ pub async fn add_recording(
         segment_count: 0,
         retry_count: 0,
         thumbnail: None,
+        scheduled_start: None,
+        recurrence: None,
     };
 
     // 块作用域确保锁守卫在 .await 前释放（否则 future 非 Send）
@@ -156,6 +158,14 @@ pub async fn update_recording(
         .map_err(|e| ApiError(format!("保存失败: {}", e)))?;
 
     Ok(Json(json!({ "success": true })))
+}
+
+/// POST /api/cleanup — 立即执行一次磁盘自动清理，返回删除条数
+pub async fn cleanup(
+    State(state): State<Arc<ServerState>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let deleted = crate::cleanup::run_cleanup(&state.app_state).await;
+    Ok(Json(json!({ "deleted": deleted })))
 }
 
 /// GET /api/recordings/:id/status — 获取单个录制状态

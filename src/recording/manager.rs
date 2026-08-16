@@ -286,12 +286,12 @@ impl RecordingManager {
                 recordings.iter().find(|r| r.id == rid).cloned()
             };
             let _ = app_state.save_recordings().await;
-            if let Some(cfg) = updated.clone() {
-                let _ = status_tx.send(cfg.clone());
-                broadcaster.broadcast_status(&cfg);
+            if let Some(finished) = updated.clone() {
+                let _ = status_tx.send(finished.clone());
+                broadcaster.broadcast_status(&finished);
 
                 // 写入录制历史（成功/失败均记录）
-                let history_entry = make_history_entry(&cfg, &final_result);
+                let history_entry = make_history_entry(&finished, &final_result);
                 let _ = app_state.add_history_entry(history_entry).await;
 
                 // Webhook：录制完成 / 失败通知
@@ -301,10 +301,37 @@ impl RecordingManager {
                 } else {
                     EVENT_FAILED
                 };
-                let hook_cfg = cfg.clone();
+                let hook_cfg = finished.clone();
                 tokio::spawn(async move {
                     crate::notifier::fire_webhook(hook_app, hook_event, &hook_cfg).await;
                 });
+            }
+
+            // 定时录制周期重排：成功完成后，若设置了 recurrence，计算下一次开始时间
+            if final_result.is_ok() {
+                if let Some(fin) = &updated {
+                    if let Some(rec) = &fin.recurrence {
+                        if *rec != crate::models::Recurrence::Once {
+                            let next = match rec {
+                                crate::models::Recurrence::Daily => {
+                                    Utc::now() + chrono::Duration::days(1)
+                                }
+                                crate::models::Recurrence::Weekly => {
+                                    Utc::now() + chrono::Duration::days(7)
+                                }
+                                _ => Utc::now(),
+                            };
+                            {
+                                let mut recs = app_state.recordings.write();
+                                if let Some(r) = recs.iter_mut().find(|r| r.id == rid) {
+                                    r.scheduled_start = Some(next);
+                                    r.updated_at = Utc::now();
+                                }
+                            }
+                            let _ = app_state.save_recordings().await;
+                        }
+                    }
+                }
             }
         });
 
@@ -409,6 +436,15 @@ impl RecordingManager {
 
         let this = self.clone();
         *poll_handle = Some(tokio::spawn(async move {
+            // 磁盘自动清理周期任务：每 5 分钟检查一次（settings.auto_cleanup 开启时生效）
+            let cleanup_app = this.app_state.clone();
+            tokio::spawn(async move {
+                loop {
+                    tokio::time::sleep(Duration::from_secs(300)).await;
+                    crate::cleanup::run_cleanup(&cleanup_app).await;
+                }
+            });
+
             info!("直播检测轮询已启动");
             loop {
                 info!("直播检测轮询: {:?}", chrono::Local::now());
@@ -432,6 +468,13 @@ impl RecordingManager {
                     if !TimeRange::any_contains(&recording.schedule, Local::now()) {
                         info!("{} 不在录制时间窗口内，跳过检测", recording.url);
                         continue;
+                    }
+
+                    // 定时开录：尚未到点则跳过检测，保持"已排期"状态（前端据 scheduled_start 展示）
+                    if let Some(start) = recording.scheduled_start {
+                        if Utc::now() < start {
+                            continue;
+                        }
                     }
 
                     // 在独立作用域中读取 settings，确保守卫在 .await 前完全释放
@@ -484,6 +527,22 @@ impl RecordingManager {
                             };
                             if let Some(cfg) = cfg_to_broadcast {
                                 this.broadcast(cfg);
+                            }
+
+                            // 并发上限：达到上限则暂不启动，等待空位（前端据 active 数展示"排队中"）
+                            let max_concurrent = {
+                                let s = this.app_state.settings.read();
+                                s.max_concurrent_recordings
+                            };
+                            if max_concurrent > 0 {
+                                let active = this.active_count().await;
+                                if active >= max_concurrent as usize {
+                                    info!(
+                                        "并发已达上限({}/{}), 任务 {} 进入排队",
+                                        active, max_concurrent, recording.id
+                                    );
+                                    continue;
+                                }
                             }
 
                             // 并行启动录制，不阻塞后续直播间的检测
@@ -891,6 +950,7 @@ fn make_history_entry(
         duration_seconds: duration,
         file_path,
         file_size,
+        recording_dir: config.recording_dir.clone(),
         thumbnail: config.thumbnail.clone(),
         error_message: match final_result {
             Ok(_) => None,

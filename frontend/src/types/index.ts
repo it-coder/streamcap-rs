@@ -42,6 +42,8 @@ export interface RecordingConfig {
   segment_count: number;
   retry_count: number;
   thumbnail: string | null;
+  scheduled_start: string | null;
+  recurrence: "once" | "daily" | "weekly" | null;
 }
 
 export interface AppSettings {
@@ -64,6 +66,8 @@ export interface AppSettings {
   max_retries: number;
   retry_delay_seconds: number;
   webhook_url: string | null;
+  max_concurrent_recordings: number;
+  auto_cleanup: boolean;
 }
 
 // 录制历史状态

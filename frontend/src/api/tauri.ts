@@ -7,7 +7,10 @@ export const addRecording = (params: {
   url: string;
   monitorEnabled?: boolean;
   quality?: VideoQuality;
+  scheduledStart?: string | null;
+  recurrence?: string | null;
 }) => api.addRecording(params);
+export const runCleanup = () => api.runCleanup();
 export const removeRecording = (id: string) => api.removeRecording(id);
 export const updateRecording = (config: RecordingConfig) =>
   api.updateRecording(config);
