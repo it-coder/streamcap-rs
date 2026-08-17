@@ -514,6 +514,12 @@ pub struct AppSettings {
     /// 磁盘空间不足时自动清理最旧的已完成录制（需配合 recording_space_threshold_gb > 0）
     #[serde(default)]
     pub auto_cleanup: bool,
+    /// 关闭窗口时最小化到系统托盘（而非退出应用）；默认 true
+    #[serde(default = "default_true")]
+    pub minimize_to_tray: bool,
+    /// 开机自启（仅桌面端生效；server 模式忽略）
+    #[serde(default)]
+    pub auto_launch: bool,
 }
 
 fn default_output_dir() -> String {
@@ -575,6 +581,8 @@ impl Default for AppSettings {
             webhook_url: None,
             max_concurrent_recordings: 3,
             auto_cleanup: false,
+            minimize_to_tray: true,
+            auto_launch: false,
         }
     }
 }

@@ -3,7 +3,8 @@
 use crate::config::AppState;
 use crate::models::AppSettings;
 use std::sync::Arc;
-use tauri::State;
+use tauri::{AppHandle, State};
+use tauri_plugin_autostart::ManagerExt;
 
 /// 获取设置
 #[tauri::command]
@@ -15,15 +16,27 @@ pub fn get_settings(state: State<'_, Arc<AppState>>) -> Result<AppSettings, Stri
 /// 更新设置
 #[tauri::command]
 pub async fn update_settings(
+    app: AppHandle,
     state: State<'_, Arc<AppState>>,
     settings: AppSettings,
 ) -> Result<(), String> {
-    settings.validate().map_err(|e| format!("设置校验失败: {e}"))?;
-    *state.settings.write() = settings;
+    settings
+        .validate()
+        .map_err(|e| format!("设置校验失败: {e}"))?;
+    *state.settings.write() = settings.clone();
     state
         .save_settings()
         .await
-        .map_err(|e| format!("保存失败: {}", e))
+        .map_err(|e| format!("保存失败: {}", e))?;
+
+    // 应用开机自启（仅桌面端；server 模式不加载此命令）
+    let manager = app.autolaunch();
+    let _ = if settings.auto_launch {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+    Ok(())
 }
 
 /// 检查 FFmpeg 是否可用

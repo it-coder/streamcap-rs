@@ -256,6 +256,13 @@ const zh: Dict = {
   "notify.recordingDone": "✅ {name} 录制完成",
   "notify.recordingFailed": "❌ {name} 录制失败",
 
+  // 桌面体验
+  "settings.groupDesktop": "桌面体验",
+  "settings.minimizeToTray": "关闭窗口时最小化到托盘",
+  "settings.minimizeToTrayTooltip": "关闭主窗口时不退出，保留在系统托盘继续录制与轮询；关闭则直接退出应用",
+  "settings.autoLaunch": "开机自启",
+  "settings.autoLaunchTooltip": "系统登录时自动启动（仅桌面端生效，server 模式忽略）",
+
   // 关闭遮罩
   "shutdown.done": "安全关闭完成",
   "shutdown.closing": "正在安全关闭应用",
@@ -488,6 +495,13 @@ const en: Dict = {
   "notify.recordingStarted": "🔴 {name} started recording",
   "notify.recordingDone": "✅ {name} recording finished",
   "notify.recordingFailed": "❌ {name} recording failed",
+
+  // Desktop experience
+  "settings.groupDesktop": "Desktop",
+  "settings.minimizeToTray": "Minimize to tray on close",
+  "settings.minimizeToTrayTooltip": "Keep running in the system tray (recording & polling continue) when the window is closed; turn off to quit on close",
+  "settings.autoLaunch": "Launch at login",
+  "settings.autoLaunchTooltip": "Start automatically on system login (desktop only; ignored in server mode)",
 
   "shutdown.done": "Shutdown complete",
   "shutdown.closing": "Safely shutting down...",

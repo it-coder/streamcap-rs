@@ -68,6 +68,8 @@ export interface AppSettings {
   webhook_url: string | null;
   max_concurrent_recordings: number;
   auto_cleanup: boolean;
+  minimize_to_tray: boolean;
+  auto_launch: boolean;
 }
 
 // 录制历史状态

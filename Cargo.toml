@@ -27,6 +27,7 @@ desktop = [
     "dep:tauri-plugin-notification",
     "dep:tauri-plugin-dialog",
     "dep:tauri-plugin-fs",
+    "dep:tauri-plugin-autostart",
 ]
 server = [
     "dep:axum",
@@ -65,6 +66,7 @@ tauri-plugin-shell = { version = "2", optional = true }
 tauri-plugin-notification = { version = "2", optional = true }
 tauri-plugin-dialog = { version = "2", optional = true }
 tauri-plugin-fs = { version = "2", optional = true }
+tauri-plugin-autostart = { version = "2", optional = true }
 
 # Server 依赖 (optional)
 axum = { version = "0.7", optional = true, features = ["ws"] }

@@ -303,6 +303,30 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
       ),
     },
     {
+      key: "desktop",
+      label: t("settings.groupDesktop"),
+      children: (
+        <>
+          <Form.Item
+            label={t("settings.minimizeToTray")}
+            name="minimize_to_tray"
+            valuePropName="checked"
+            tooltip={t("settings.minimizeToTrayTooltip")}
+          >
+            <Switch />
+          </Form.Item>
+          <Form.Item
+            label={t("settings.autoLaunch")}
+            name="auto_launch"
+            valuePropName="checked"
+            tooltip={t("settings.autoLaunchTooltip")}
+          >
+            <Switch />
+          </Form.Item>
+        </>
+      ),
+    },
+    {
       key: "cookie",
       label: t("settings.cookie"),
       extra: t("settings.cookieHint"),
