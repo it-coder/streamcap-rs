@@ -212,12 +212,21 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building streamcap-rs");
 
-    app.run(|app, event| {
+    app.run(|app, event| match event {
+        // macOS: 点击 Dock 图标（窗口已隐藏到托盘时）→ 显示并聚焦主窗口
+        #[cfg(target_os = "macos")]
+        tauri::RunEvent::Reopen { .. } => {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }
         // 用户显式退出（如 macOS Cmd+Q）：优雅停止录制后再退出
-        if let tauri::RunEvent::ExitRequested { api, .. } = event {
+        tauri::RunEvent::ExitRequested { api, .. } => {
             api.prevent_exit();
             let app = app.clone();
             tauri::async_runtime::spawn(graceful_quit(app));
         }
+        _ => {}
     });
 }
