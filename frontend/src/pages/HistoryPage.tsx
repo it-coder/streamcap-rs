@@ -177,16 +177,7 @@ export function HistoryPage() {
                       style={{ color: entry.file_path ? undefined : "#ccc" }}
                     />
                   </Tooltip>,
-                  <Popconfirm
-                    key="del"
-                    title={t("history.deleteConfirm")}
-                    description={
-                      <PopconfirmDelete onConfirm={(df) => onDelete(entry, df)} />
-                    }
-                    icon={null}
-                  >
-                    <DeleteOutlined />
-                  </Popconfirm>,
+                  <DeleteEntryButton entry={entry} onDelete={onDelete} />,
                 ]}
               >
                 <Card.Meta
@@ -275,29 +266,39 @@ function StatusTag({ entry }: { entry: RecordingHistoryEntry }) {
   return <Tag color={color}>{t(`history.status.${entry.status}`)}</Tag>;
 }
 
-// 删除确认气泡内的「同时删除文件」复选框
-function PopconfirmDelete({ onConfirm }: { onConfirm: (deleteFile: boolean) => void }) {
+// 删除确认气泡：原生确认按钮触发删除，内置「同时删除文件」复选框
+function DeleteEntryButton({
+  entry,
+  onDelete,
+}: {
+  entry: RecordingHistoryEntry;
+  onDelete: (entry: RecordingHistoryEntry, deleteFile: boolean) => void;
+}) {
   const { t } = useI18n();
   const [deleteFile, setDeleteFile] = useState(false);
   return (
-    <div
-      onClick={(e) => e.stopPropagation()}
-      onDoubleClick={(e) => e.stopPropagation()}
+    <Popconfirm
+      title={t("history.deleteConfirm")}
+      icon={null}
+      description={
+        <div
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <label style={{ display: "block", marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              checked={deleteFile}
+              onChange={(e) => setDeleteFile(e.target.checked)}
+            />{" "}
+            {t("history.deleteFile")}
+          </label>
+        </div>
+      }
+      onConfirm={() => onDelete(entry, deleteFile)}
     >
-      <label style={{ display: "block", marginBottom: 8 }}>
-        <input
-          type="checkbox"
-          checked={deleteFile}
-          onChange={(e) => setDeleteFile(e.target.checked)}
-        />{" "}
-        {t("history.deleteFile")}
-      </label>
-      <Space>
-        <Button size="small" onClick={(e) => { e.stopPropagation(); onConfirm(deleteFile); }}>
-          {t("history.delete")}
-        </Button>
-      </Space>
-    </div>
+      <DeleteOutlined />
+    </Popconfirm>
   );
 }
 
