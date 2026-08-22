@@ -14,7 +14,6 @@ import {
   TimePicker,
   DatePicker,
   message,
-  Tooltip,
 } from "antd";
 import { LinkOutlined, PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
@@ -152,13 +151,11 @@ export function EditTask({ entry, onSave, onClose }: Props) {
             ) : undefined
           }
         >
-          <Tooltip title={locked ? t("edit.urlLockedHint") : undefined}>
-            <Input
-              prefix={<LinkOutlined />}
-              placeholder={t("add.urlPlaceholder")}
-              disabled={locked}
-            />
-          </Tooltip>
+          <Input
+            prefix={<LinkOutlined />}
+            placeholder={t("add.urlPlaceholder")}
+            disabled={locked}
+          />
         </Form.Item>
 
         <Space style={{ display: "flex", marginBottom: 0 }} size="large">
