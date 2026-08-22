@@ -32,6 +32,7 @@ impl FFmpegRecorder {
 
     /// 构建 FFmpeg 命令行参数
     pub fn build_ffmpeg_command(
+        ffmpeg_bin: &str,
         stream_url: &str,
         output_path: &PathBuf,
         format: &OutputFormat,
@@ -39,7 +40,7 @@ impl FFmpegRecorder {
         proxy_url: Option<&str>,
     ) -> Vec<String> {
         let mut args = vec![
-            "ffmpeg".to_string(),
+            ffmpeg_bin.to_string(),
             "-y".to_string(),
             "-v".to_string(), "verbose".to_string(),
             "-rw_timeout".to_string(), "15000000".to_string(),
@@ -120,12 +121,14 @@ impl FFmpegRecorder {
     /// 返回 Ok(()) 表示进程启动成功，开始录制循环
     pub async fn start(
         &mut self,
+        ffmpeg_bin: &str,
         stream_url: &str,
         format: &OutputFormat,
         user_agent: &str,
         proxy_url: Option<&str>,
     ) -> Result<(), String> {
         let ffmpeg_args = Self::build_ffmpeg_command(
+            ffmpeg_bin,
             stream_url,
             &self.output_path,
             format,
@@ -310,6 +313,7 @@ impl FFmpegRecorder {
 ///
 /// 源格式 == 目标格式时跳过转换，直接返回原路径。
 pub async fn convert_format(
+    ffmpeg_bin: &str,
     input: &PathBuf,
     target_format: &OutputFormat,
     delete_original: bool,
@@ -366,7 +370,7 @@ pub async fn convert_format(
 
     args.push(output.to_string_lossy().into());
 
-    let status = Command::new("ffmpeg")
+    let status = Command::new(ffmpeg_bin)
         .args(&args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -391,12 +395,21 @@ pub async fn convert_format(
     }
 }
 
-/// 检查 FFmpeg 是否可用
-pub fn check_ffmpeg_available() -> Result<String, String> {
-    let output = std::process::Command::new("ffmpeg")
+/// 根据设置解析实际使用的 FFmpeg 可执行文件。
+/// `ffmpeg_path` 为空或空白时回退到 PATH 中的 "ffmpeg"。
+pub fn resolve_ffmpeg_bin(path: &Option<String>) -> String {
+    match path {
+        Some(p) if !p.trim().is_empty() => p.trim().to_string(),
+        _ => "ffmpeg".to_string(),
+    }
+}
+
+/// 检查指定 FFmpeg 可执行文件是否可用
+pub fn check_ffmpeg_available(bin: &str) -> Result<String, String> {
+    let output = std::process::Command::new(bin)
         .args(["-version"])
         .output()
-        .map_err(|_| "FFmpeg 未安装或不在 PATH 中".to_string())?;
+        .map_err(|_| format!("FFmpeg 不可用 ({} 未找到或未执行)", bin))?;
 
     if output.status.success() {
         let version = String::from_utf8_lossy(&output.stdout)
@@ -414,7 +427,11 @@ pub fn check_ffmpeg_available() -> Result<String, String> {
 ///
 /// 用于录制中定期生成封面预览。从本地分段文件读取第一帧，不消耗额外网络带宽。
 /// TS 等流式容器可正常抽取；MP4 等需 moov 原子的容器在录制中（未 finalize）可能失败，调用方应忽略错误。
-pub async fn capture_thumbnail(input: &PathBuf, output: &PathBuf) -> Result<(), String> {
+pub async fn capture_thumbnail(
+    ffmpeg_bin: &str,
+    input: &PathBuf,
+    output: &PathBuf,
+) -> Result<(), String> {
     let args: Vec<String> = vec![
         "-y".into(),
         "-loglevel".into(), "error".into(),
@@ -429,7 +446,7 @@ pub async fn capture_thumbnail(input: &PathBuf, output: &PathBuf) -> Result<(), 
 
     let result = tokio::time::timeout(
         Duration::from_secs(15),
-        Command::new("ffmpeg")
+        Command::new(ffmpeg_bin)
             .args(&args)
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -446,8 +463,8 @@ pub async fn capture_thumbnail(input: &PathBuf, output: &PathBuf) -> Result<(), 
 }
 
 /// 运行一条简单的 FFmpeg 命令（无实时进度），成功返回 Ok(())
-async fn run_ffmpeg(args: &[String]) -> Result<(), String> {
-    let status = Command::new("ffmpeg")
+async fn run_ffmpeg(ffmpeg_bin: &str, args: &[String]) -> Result<(), String> {
+    let status = Command::new(ffmpeg_bin)
         .args(args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -462,7 +479,11 @@ async fn run_ffmpeg(args: &[String]) -> Result<(), String> {
 }
 
 /// 后处理：提取音频为 MP3（使用 libmp3lame 重编码，兼容性最好）
-pub async fn extract_audio(input: &PathBuf, output: &PathBuf) -> Result<PathBuf, String> {
+pub async fn extract_audio(
+    ffmpeg_bin: &str,
+    input: &PathBuf,
+    output: &PathBuf,
+) -> Result<PathBuf, String> {
     let args: Vec<String> = vec![
         "-y".into(),
         "-i".into(),
@@ -474,7 +495,7 @@ pub async fn extract_audio(input: &PathBuf, output: &PathBuf) -> Result<PathBuf,
         "2".into(),
         output.to_string_lossy().into(),
     ];
-    run_ffmpeg(&args)
+    run_ffmpeg(ffmpeg_bin, &args)
         .await
         .map(|_| output.clone())
         .map_err(|e| format!("提取音频失败: {}", e))
@@ -484,6 +505,7 @@ pub async fn extract_audio(input: &PathBuf, output: &PathBuf) -> Result<PathBuf,
 ///
 /// `start` 为起始秒；`end` 为结束秒（None 表示截到结尾）。
 pub async fn trim(
+    ffmpeg_bin: &str,
     input: &PathBuf,
     output: &PathBuf,
     start: f64,
@@ -503,8 +525,112 @@ pub async fn trim(
         args.push(format!("{:.3}", end));
     }
     args.push(output.to_string_lossy().into());
-    run_ffmpeg(&args)
+    run_ffmpeg(ffmpeg_bin, &args)
         .await
         .map(|_| output.clone())
         .map_err(|e| format!("片段截取失败: {}", e))
+}
+
+/// ffmpeg-static 发布版本（对应 ffmpeg 6.1.1）。
+/// 下载基址：https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1/<asset>
+const FFMPEG_STATIC_VERSION: &str = "b6.1.1";
+
+/// 根据当前平台/架构返回 ffmpeg-static 的资源文件名。
+///
+/// 支持：macOS (Intel/Apple Silicon)、Linux (x64/arm64)、Windows (x64)。
+/// 其它平台返回 None，调用方应提示用户手动安装。
+fn static_asset_name() -> Option<&'static str> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => Some("ffmpeg-darwin-arm64"),
+        ("macos", "x86_64") => Some("ffmpeg-darwin-x64"),
+        ("linux", "x86_64") => Some("ffmpeg-linux-x64"),
+        ("linux", "aarch64") => Some("ffmpeg-linux-arm64"),
+        ("windows", "x86_64") => Some("ffmpeg-win32-x64.exe"),
+        _ => None,
+    }
+}
+
+/// 一键安装 FFmpeg：从 ffmpeg-static 发布下载适配当前平台的静态二进制，
+/// 落地到 `<data_dir>/ffmpeg/ffmpeg`（Windows 为 `ffmpeg.exe`），赋予可执行权限
+/// （unix），并运行 `-version` 校验其可用性。
+///
+/// 成功返回版本字符串；调用方应把返回的**可执行文件路径**写入 `settings.ffmpeg_path`
+/// 并保存，使后续录制/转码直接使用该二进制。
+///
+/// 该函数在运行二进制的那台机器上执行（桌面端本地 / 服务端宿主），因此
+/// 对桌面与服务端 B/S 模式均适用，且无需 sudo / 包管理器。
+pub async fn install_ffmpeg(data_dir: &PathBuf) -> Result<String, String> {
+    let asset = static_asset_name().ok_or_else(|| {
+        format!(
+            "当前平台/架构 ({}-{}) 暂不支持一键安装, 请手动安装 FFmpeg 并在设置中指定路径",
+            std::env::consts::OS,
+            std::env::consts::ARCH
+        )
+    })?;
+
+    let url = format!(
+        "https://github.com/eugeneware/ffmpeg-static/releases/download/{}/{asset}",
+        FFMPEG_STATIC_VERSION
+    );
+
+    let dest_dir = data_dir.join("ffmpeg");
+    tokio::fs::create_dir_all(&dest_dir)
+        .await
+        .map_err(|e| format!("创建安装目录失败: {}", e))?;
+    let exe_name = if std::env::consts::OS == "windows" {
+        "ffmpeg.exe"
+    } else {
+        "ffmpeg"
+    };
+    let dest = dest_dir.join(exe_name);
+
+    info!("开始下载 FFmpeg 静态二进制: {}", url);
+    let client = reqwest::Client::builder()
+        // reqwest 默认会读取 HTTP_PROXY/HTTPS_PROXY 环境变量（开发机常走本地代理）；
+        // 无代理环境不受影响，无需额外配置。
+        .build()
+        .map_err(|e| format!("HTTP 客户端初始化失败: {}", e))?;
+
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| format!("下载 FFmpeg 失败: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("下载 FFmpeg 失败, HTTP 状态码 {}", resp.status()));
+    }
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| format!("读取下载内容失败: {}", e))?;
+    tokio::fs::write(&dest, &bytes)
+        .await
+        .map_err(|e| format!("写入 FFmpeg 文件失败: {}", e))?;
+
+    // unix 下赋予可执行权限
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = tokio::fs::metadata(&dest)
+            .await
+            .map_err(|e| e.to_string())?
+            .permissions();
+        perms.set_mode(0o755);
+        tokio::fs::set_permissions(&dest, perms)
+            .await
+            .map_err(|e| format!("设置可执行权限失败: {}", e))?;
+    }
+
+    let dest_str = dest.to_string_lossy().to_string();
+    match check_ffmpeg_available(&dest_str) {
+        Ok(version) => {
+            info!("FFmpeg 安装成功: {} ({})", dest_str, version);
+            Ok(dest_str)
+        }
+        Err(e) => {
+            // 校验失败：删除损坏文件，避免留下无法使用的二进制
+            let _ = tokio::fs::remove_file(&dest).await;
+            Err(format!("下载的 FFmpeg 校验失败（可能不是有效二进制）: {}", e))
+        }
+    }
 }

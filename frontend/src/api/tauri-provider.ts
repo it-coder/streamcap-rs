@@ -16,6 +16,8 @@ import type {
   RecordingHistoryEntry,
   PostProcessJob,
   PostProcessRequest,
+  FfmpegCheck,
+  FfmpegInstallResult,
 } from "../types";
 
 export class TauriApiProvider implements ApiProvider {
@@ -83,8 +85,12 @@ export class TauriApiProvider implements ApiProvider {
     return invoke<void>("update_settings", { settings });
   }
 
-  async checkFfmpeg(): Promise<string> {
-    return invoke<string>("check_ffmpeg");
+  async checkFfmpeg(): Promise<FfmpegCheck> {
+    return invoke<FfmpegCheck>("check_ffmpeg");
+  }
+
+  async installFfmpeg(): Promise<FfmpegInstallResult> {
+    return invoke<FfmpegInstallResult>("install_ffmpeg");
   }
 
   // ========================================

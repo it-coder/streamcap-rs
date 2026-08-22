@@ -70,6 +70,22 @@ export interface AppSettings {
   auto_cleanup: boolean;
   minimize_to_tray: boolean;
   auto_launch: boolean;
+  /// 自定义 FFmpeg 可执行文件路径；null 时回退 PATH 中的 "ffmpeg"
+  ffmpeg_path: string | null;
+}
+
+// FFmpeg 可用性检测结果
+export interface FfmpegCheck {
+  available: boolean;
+  version: string;
+  path: string;
+}
+
+// FFmpeg 安装结果
+export interface FfmpegInstallResult {
+  available: boolean;
+  version: string;
+  path: string;
 }
 
 // 录制历史状态

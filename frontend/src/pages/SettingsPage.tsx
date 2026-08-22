@@ -327,6 +327,24 @@ export function SettingsPage({ settings, loading, onSave }: Props) {
       ),
     },
     {
+      key: "ffmpeg",
+      label: t("settings.groupFfmpeg"),
+      children: (
+        <>
+          <Form.Item
+            label={t("settings.ffmpegPath")}
+            name="ffmpeg_path"
+            tooltip={t("settings.ffmpegPathTooltip")}
+          >
+            <Input placeholder={t("settings.ffmpegPathPlaceholder")} allowClear />
+          </Form.Item>
+          <div style={{ marginTop: -8, marginBottom: 16, fontSize: 12, color: "#6B7280" }}>
+            {t("settings.ffmpegPathHint")}
+          </div>
+        </>
+      ),
+    },
+    {
       key: "cookie",
       label: t("settings.cookie"),
       extra: t("settings.cookieHint"),

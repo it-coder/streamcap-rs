@@ -580,6 +580,22 @@ pub struct AppSettings {
     /// 开机自启（仅桌面端生效；server 模式忽略）
     #[serde(default)]
     pub auto_launch: bool,
+    /// 自定义 FFmpeg 可执行文件路径；None 时回退到 PATH 中的 "ffmpeg"。
+    /// 由「一键安装 FFmpeg」自动写入（下载的静态二进制路径）。
+    #[serde(default)]
+    pub ffmpeg_path: Option<String>,
+}
+
+/// FFmpeg 可用性检测结果（供前端结构化展示）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FfmpegCheck {
+    /// 是否可用
+    pub available: bool,
+    /// 版本字符串（不可用时为空）
+    pub version: String,
+    /// 实际使用的可执行文件路径（PATH 查找时为 "ffmpeg"）
+    pub path: String,
 }
 
 fn default_output_dir() -> String {
@@ -643,6 +659,7 @@ impl Default for AppSettings {
             auto_cleanup: false,
             minimize_to_tray: true,
             auto_launch: false,
+            ffmpeg_path: None,
         }
     }
 }

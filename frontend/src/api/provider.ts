@@ -4,7 +4,7 @@
 // - 桌面客户端模式 (window.__TAURI__ 存在) → TauriApiProvider (invoke + listen)
 // - B/S 服务器模式 (浏览器) → HttpApiProvider (fetch + WebSocket)
 
-import type { RecordingConfig, AppSettings, VideoQuality, ShutdownPayload, RecordingProgress, AppVersion, FileEntry, RecordingHistoryEntry, PostProcessJob, PostProcessRequest } from "../types";
+import type { RecordingConfig, AppSettings, VideoQuality, ShutdownPayload, RecordingProgress, AppVersion, FileEntry, RecordingHistoryEntry, PostProcessJob, PostProcessRequest, FfmpegCheck, FfmpegInstallResult } from "../types";
 
 export type { ShutdownPayload } from "../types";
 
@@ -29,7 +29,8 @@ export interface ApiProvider {
   // 设置
   getSettings(): Promise<AppSettings>;
   updateSettings(settings: AppSettings): Promise<void>;
-  checkFfmpeg(): Promise<string>;
+  checkFfmpeg(): Promise<FfmpegCheck>;
+  installFfmpeg(): Promise<FfmpegInstallResult>;
 
   // 应用元信息
   getVersion(): Promise<AppVersion>;

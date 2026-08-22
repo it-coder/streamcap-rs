@@ -174,13 +174,18 @@ async fn run_job(
                 },
                 None => OutputFormat::MP4,
             };
-            ffmpeg::convert_format(&input, &fmt, false).await
+            let ffmpeg_bin = ffmpeg::resolve_ffmpeg_bin(&app_state.settings.read().ffmpeg_path);
+            ffmpeg::convert_format(&ffmpeg_bin, &input, &fmt, false).await
         }
-        "extract-audio" => ffmpeg::extract_audio(&input, &output).await,
+        "extract-audio" => {
+            let ffmpeg_bin = ffmpeg::resolve_ffmpeg_bin(&app_state.settings.read().ffmpeg_path);
+            ffmpeg::extract_audio(&ffmpeg_bin, &input, &output).await
+        }
         "trim" => {
             let start = req.start_seconds.unwrap_or(0.0);
             let end = req.end_seconds;
-            ffmpeg::trim(&input, &output, start, end).await
+            let ffmpeg_bin = ffmpeg::resolve_ffmpeg_bin(&app_state.settings.read().ffmpeg_path);
+            ffmpeg::trim(&ffmpeg_bin, &input, &output, start, end).await
         }
         _ => Err(format!("不支持的后处理类型: {}", req.kind)),
     };

@@ -693,9 +693,10 @@ async fn run_ffmpeg_recording(
         }
 
         // 启动 FFmpeg
+        let ffmpeg_bin = ffmpeg::resolve_ffmpeg_bin(&app_state.settings.read().ffmpeg_path);
         let mut recorder = FFmpegRecorder::new(recording_id, segment_path.clone());
         recorder
-            .start(stream_url, output_format, user_agent, proxy_url)
+            .start(&ffmpeg_bin, stream_url, output_format, user_agent, proxy_url)
             .await?;
 
         // 监控循环：等待停止信号 / 流结束 / 分段超时 / 磁盘满 / 窗口结束
@@ -784,7 +785,8 @@ async fn run_ffmpeg_recording(
             if last_thumb_time.elapsed() >= Duration::from_secs(60) {
                 last_thumb_time = tokio::time::Instant::now();
                 let thumb_path = dir.join(format!("{}_thumb.jpg", recording_id));
-                if ffmpeg::capture_thumbnail(&segment_path, &thumb_path).await.is_ok() {
+                let ffmpeg_bin = ffmpeg::resolve_ffmpeg_bin(&app_state.settings.read().ffmpeg_path);
+                if ffmpeg::capture_thumbnail(&ffmpeg_bin, &segment_path, &thumb_path).await.is_ok() {
                     let updated = {
                         let mut recordings = app_state.recordings.write();
                         if let Some(r) = recordings.iter_mut().find(|r| r.id == recording_id) {
@@ -830,7 +832,8 @@ async fn run_ffmpeg_recording(
         };
 
         if enable_conversion {
-            match ffmpeg::convert_format(&segment_path, &conversion_format, delete_original)
+            let ffmpeg_bin = ffmpeg::resolve_ffmpeg_bin(&app_state.settings.read().ffmpeg_path);
+            match ffmpeg::convert_format(&ffmpeg_bin, &segment_path, &conversion_format, delete_original)
                 .await
             {
                 Ok(converted_path) => {

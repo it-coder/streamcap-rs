@@ -25,6 +25,9 @@ const zh: Dict = {
   "ffmpeg.available": "✅ FFmpeg 可用",
   "ffmpeg.missing": "❌ FFmpeg 未安装",
   "ffmpeg.checking": "检查 FFmpeg...",
+  "ffmpeg.install": "一键安装 FFmpeg",
+  "ffmpeg.installSuccess": "FFmpeg 安装成功",
+  "ffmpeg.installFail": "FFmpeg 安装失败: {error}",
 
   // 录制状态
   "status.monitoring": "监控中",
@@ -270,6 +273,11 @@ const zh: Dict = {
 
   // 桌面体验
   "settings.groupDesktop": "桌面体验",
+  "settings.groupFfmpeg": "FFmpeg",
+  "settings.ffmpegPath": "FFmpeg 路径",
+  "settings.ffmpegPathTooltip": "自定义 FFmpeg 可执行文件绝对路径；留空则使用 PATH 中的 ffmpeg。一键安装后会自动填入下载的静态二进制路径。",
+  "settings.ffmpegPathPlaceholder": "留空使用系统 ffmpeg",
+  "settings.ffmpegPathHint": "若未安装 FFmpeg，可前往侧边栏点击「一键安装 FFmpeg」自动下载静态二进制（无需 sudo），或在此手动指定已安装的路径。",
   "settings.minimizeToTray": "关闭窗口时最小化到托盘",
   "settings.minimizeToTrayTooltip": "关闭主窗口时不退出，保留在系统托盘继续录制与轮询；关闭则直接退出应用",
   "settings.autoLaunch": "开机自启",
@@ -293,6 +301,9 @@ const en: Dict = {
   "ffmpeg.available": "✅ FFmpeg Ready",
   "ffmpeg.missing": "❌ FFmpeg Not Installed",
   "ffmpeg.checking": "Checking FFmpeg...",
+  "ffmpeg.install": "Install FFmpeg",
+  "ffmpeg.installSuccess": "FFmpeg installed successfully",
+  "ffmpeg.installFail": "FFmpeg install failed: {error}",
 
   "status.monitoring": "Monitoring",
   "status.checking": "Checking",
@@ -521,6 +532,11 @@ const en: Dict = {
 
   // Desktop experience
   "settings.groupDesktop": "Desktop",
+  "settings.groupFfmpeg": "FFmpeg",
+  "settings.ffmpegPath": "FFmpeg Path",
+  "settings.ffmpegPathTooltip": "Absolute path to the FFmpeg executable; leave empty to use PATH's ffmpeg. Auto-filled with the downloaded static binary after one-click install.",
+  "settings.ffmpegPathPlaceholder": "Leave empty to use system ffmpeg",
+  "settings.ffmpegPathHint": "If FFmpeg is missing, click \"Install FFmpeg\" in the sidebar to auto-download a static binary (no sudo required), or specify an installed path here manually.",
   "settings.minimizeToTray": "Minimize to tray on close",
   "settings.minimizeToTrayTooltip": "Keep running in the system tray (recording & polling continue) when the window is closed; turn off to quit on close",
   "settings.autoLaunch": "Launch at login",

@@ -281,11 +281,52 @@ pub async fn update_settings(
     Ok(Json(json!({ "success": true })))
 }
 
-/// GET /api/ffmpeg/check — 检查 FFmpeg
-pub async fn check_ffmpeg() -> Result<Json<serde_json::Value>, ApiError> {
-    match ffmpeg::check_ffmpeg_available() {
-        Ok(version) => Ok(Json(json!({ "available": true, "version": version }))),
-        Err(e) => Ok(Json(json!({ "available": false, "error": e }))),
+/// GET /api/ffmpeg/check — 检查 FFmpeg（结构化：可用状态 + 版本 + 实际路径）
+pub async fn check_ffmpeg(
+    State(state): State<Arc<ServerState>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let bin = ffmpeg::resolve_ffmpeg_bin(&state.app_state.settings.read().ffmpeg_path);
+    let path = bin.clone();
+    match ffmpeg::check_ffmpeg_available(&bin) {
+        Ok(version) => Ok(Json(json!({
+            "available": true,
+            "version": version,
+            "path": path,
+        }))),
+        Err(_) => Ok(Json(json!({
+            "available": false,
+            "version": "",
+            "path": path,
+        }))),
+    }
+}
+
+/// POST /api/ffmpeg/install — 一键安装 FFmpeg（服务端在宿主机器执行下载）
+pub async fn install_ffmpeg(
+    State(state): State<Arc<ServerState>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let data_dir = state.app_state.data_dir.clone();
+    let installed_path = ffmpeg::install_ffmpeg(&data_dir)
+        .await
+        .map_err(ApiError)?;
+
+    {
+        let mut settings = state.app_state.settings.write();
+        settings.ffmpeg_path = Some(installed_path.clone());
+    }
+    state
+        .app_state
+        .save_settings()
+        .await
+        .map_err(|e| ApiError(format!("保存设置失败: {}", e)))?;
+
+    match ffmpeg::check_ffmpeg_available(&installed_path) {
+        Ok(version) => Ok(Json(json!({
+            "available": true,
+            "version": version,
+            "path": installed_path,
+        }))),
+        Err(e) => Err(ApiError(format!("安装后校验失败: {}", e))),
     }
 }
 

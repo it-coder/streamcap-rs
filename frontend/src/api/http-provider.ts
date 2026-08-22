@@ -15,6 +15,8 @@ import type {
   RecordingHistoryEntry,
   PostProcessJob,
   PostProcessRequest,
+  FfmpegCheck,
+  FfmpegInstallResult,
 } from "../types";
 
 export class HttpApiProvider implements ApiProvider {
@@ -134,16 +136,15 @@ export class HttpApiProvider implements ApiProvider {
     });
   }
 
-  async checkFfmpeg(): Promise<string> {
-    const data = await this.fetchJson<{
-      available: boolean;
-      version?: string;
-      error?: string;
-    }>("/api/ffmpeg/check");
-    if (data.available) {
-      return data.version || "unknown";
-    }
-    throw new Error(data.error || "FFmpeg not available");
+  async checkFfmpeg(): Promise<FfmpegCheck> {
+    return this.fetchJson<FfmpegCheck>("/api/ffmpeg/check");
+  }
+
+  async installFfmpeg(): Promise<FfmpegInstallResult> {
+    return this.fetchJson<FfmpegInstallResult>(
+      "/api/ffmpeg/install",
+      { method: "POST" },
+    );
   }
 
   // ========================================

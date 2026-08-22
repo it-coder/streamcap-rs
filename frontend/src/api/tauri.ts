@@ -24,3 +24,4 @@ export const getSettings = () => api.getSettings();
 export const updateSettings = (settings: AppSettings) =>
   api.updateSettings(settings);
 export const checkFfmpeg = () => api.checkFfmpeg();
+export const installFfmpeg = () => api.installFfmpeg();

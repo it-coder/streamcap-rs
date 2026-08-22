@@ -2,28 +2,28 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../api/provider";
+import type { FfmpegCheck } from "../types";
 
 export function useFfmpegStatus() {
   const [status, setStatus] = useState<"checking" | "available" | "missing">("checking");
-  const [version, setVersion] = useState<string>("");
+  const [info, setInfo] = useState<FfmpegCheck | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const refresh = () => {
+    setStatus("checking");
     api
       .checkFfmpeg()
-      .then((v) => {
-        if (cancelled) return;
-        setVersion(v);
-        setStatus("available");
+      .then((res) => {
+        setInfo(res);
+        setStatus(res.available ? "available" : "missing");
       })
       .catch(() => {
-        if (cancelled) return;
         setStatus("missing");
       });
-    return () => {
-      cancelled = true;
-    };
+  };
+
+  useEffect(() => {
+    refresh();
   }, []);
 
-  return { status, version };
+  return { status, info, refresh };
 }

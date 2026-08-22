@@ -9,6 +9,8 @@ import {
   theme,
   ConfigProvider,
   Select,
+  Button,
+  message,
 } from "antd";
 import {
   UnorderedListOutlined,
@@ -43,11 +45,26 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState<PageKey>("home");
   const [version, setVersion] = useState<string>("");
   const [editing, setEditing] = useState<RecordingConfig | null>(null);
+  const [installing, setInstalling] = useState(false);
   const recordingsHook = useRecordings();
   const settingsHook = useSettings();
   const ffmpeg = useFfmpegStatus();
   const { token } = theme.useToken();
   const { t, lang, setLang } = useI18n();
+
+  // 一键安装 FFmpeg（桌面端本地 / 服务端宿主），完成后重新检测状态
+  const handleInstallFfmpeg = async () => {
+    setInstalling(true);
+    try {
+      await api.installFfmpeg();
+      message.success(t("ffmpeg.installSuccess"));
+      ffmpeg.refresh();
+    } catch (e) {
+      message.error(t("ffmpeg.installFail", { error: String(e) }));
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   // 从后端获取版本号（单一可信源 = Cargo.toml）
   useEffect(() => {
@@ -63,21 +80,6 @@ function AppContent() {
     { key: "files", icon: <FolderOpenOutlined />, label: t("nav.files") },
     { key: "history", icon: <HistoryOutlined />, label: t("nav.history") },
     { key: "settings", icon: <SettingOutlined />, label: t("nav.settings") },
-    {
-      key: "ffmpeg-status",
-      label: (
-        <div style={{ padding: "8px 0" }}>
-          {ffmpeg.status === "available" ? (
-            <Tag color="success">{t("ffmpeg.available")}</Tag>
-          ) : ffmpeg.status === "missing" ? (
-            <Tag color="error">{t("ffmpeg.missing")}</Tag>
-          ) : (
-            <Tag color="processing">{t("ffmpeg.checking")}</Tag>
-          )}
-        </div>
-      ),
-      disabled: true,
-    },
   ];
 
   return (
@@ -131,6 +133,47 @@ function AppContent() {
             }}
             style={{ borderRight: 0 }}
           />
+          {/* FFmpeg 状态 + 一键安装（缺失时显示安装按钮） */}
+          <div
+            style={{
+              padding: "12px 16px",
+              borderTop: `1px solid ${token.colorBorderSecondary}`,
+            }}
+          >
+            <div style={{ marginBottom: 8, fontSize: 12, color: token.colorTextSecondary }}>
+              FFmpeg:{" "}
+              {ffmpeg.status === "available" ? (
+                <Tag color="success">{t("ffmpeg.available")}</Tag>
+              ) : ffmpeg.status === "missing" ? (
+                <Tag color="error">{t("ffmpeg.missing")}</Tag>
+              ) : (
+                <Tag color="processing">{t("ffmpeg.checking")}</Tag>
+              )}
+            </div>
+            {ffmpeg.status === "available" && ffmpeg.info?.version && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: token.colorTextTertiary,
+                  wordBreak: "break-all",
+                  marginBottom: 8,
+                }}
+              >
+                {ffmpeg.info.version}
+              </div>
+            )}
+            {ffmpeg.status === "missing" && (
+              <Button
+                size="small"
+                type="primary"
+                loading={installing}
+                onClick={handleInstallFfmpeg}
+                block
+              >
+                {t("ffmpeg.install")}
+              </Button>
+            )}
+          </div>
         </Sider>
 
         <Content style={{ padding: 24, overflow: "auto" }}>
