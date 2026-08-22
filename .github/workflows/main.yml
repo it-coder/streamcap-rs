@@ -69,13 +69,27 @@ jobs:
           args: ${{ matrix.args }}
           releaseId: none  # 不创建 Release，只构建
 
+      # 👇 计算 bundle 产物路径：指定 --target 交叉编译时产物在 target/<triple>/release/bundle 下，否则在 target/release/bundle 下
+      - name: 计算产物路径
+        id: bundle-path
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.args }}" ]; then
+            # 从 args（如 "--target aarch64-apple-darwin"）中提取 triple
+            TRIPLE=$(printf '%s' "${{ matrix.args }}" | sed 's/--target //')
+            printf 'path=target/%s/release/bundle/**/*\n' "$TRIPLE" >> "$GITHUB_OUTPUT"
+          else
+            printf 'path=target/release/bundle/**/*\n' >> "$GITHUB_OUTPUT"
+          fi
+          echo "解析出的产物路径: $(cat "$GITHUB_OUTPUT" | grep '^path=' | cut -d= -f2)"
+
       # 👇 上传构建产物作为 workflow artifacts（供后续步骤使用）
       - name: upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}-${{ matrix.args }}
-          path: |
-            target/release/bundle/**/*
+          path: ${{ steps.bundle-path.outputs.path }}
+          if-no-files-found: error  # 找不到产物直接失败，避免静默漏传
 
   # 👇 单独的 job：在所有平台构建完成后，创建带自动生成说明的 Release
   create-release:
