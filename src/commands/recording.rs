@@ -89,14 +89,17 @@ pub async fn update_recording(
     state: State<'_, Arc<AppState>>,
     config: RecordingConfig,
 ) -> Result<(), String> {
+    let id = config.id.clone();
+    let mut found = false;
     {
         let mut recordings = state.recordings.write();
-        if let Some(existing) = recordings.iter_mut().find(|r| r.id == config.id) {
-            *existing = RecordingConfig {
-                updated_at: Utc::now(),
-                ..config
-            };
+        if let Some(existing) = recordings.iter_mut().find(|r| r.id == id) {
+            found = true;
+            crate::models::merge_recording_update(existing, config)?;
         }
+    }
+    if !found {
+        return Err(format!("未找到录制任务: {}", id));
     }
 
     state

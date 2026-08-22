@@ -286,6 +286,66 @@ pub struct RecordingConfig {
     pub recurrence: Option<Recurrence>,
 }
 
+/// 合并录制任务的编辑更新（供 update_recording 调用）。
+///
+/// 限制条件：
+/// - 保留所有运行时/派生字段（id、created_at、is_recording、is_live、
+///   recording_dir、last_check_at、recording_started_at、segment_count、
+///   retry_count、thumbnail、error_message），仅覆盖用户可编辑字段，
+///   防止编辑误覆盖正在进行的录制状态。
+/// - 录制进行中（is_recording=true）禁止修改 url 与 output_dir，
+///   因为它们与正在运行的 FFmpeg 进程绑定；违者返回 Err。
+pub fn merge_recording_update(
+    existing: &mut RecordingConfig,
+    incoming: RecordingConfig,
+) -> Result<(), String> {
+    if existing.is_recording
+        && (existing.url != incoming.url || existing.output_dir != incoming.output_dir)
+    {
+        return Err("录制进行中无法修改直播间地址或输出目录".to_string());
+    }
+
+    // 先拷贝需要保留的运行时/派生字段，避免与下方 *existing = 赋值产生借用冲突
+    let id = existing.id.clone();
+    let is_recording = existing.is_recording;
+    let is_live = existing.is_live;
+    let recording_dir = existing.recording_dir.clone();
+    let created_at = existing.created_at;
+    let last_check_at = existing.last_check_at;
+    let recording_started_at = existing.recording_started_at;
+    let error_message = existing.error_message.clone();
+    let segment_count = existing.segment_count;
+    let retry_count = existing.retry_count;
+    let thumbnail = existing.thumbnail.clone();
+
+    *existing = RecordingConfig {
+        id,
+        url: incoming.url,
+        platform: incoming.platform,
+        anchor_name: incoming.anchor_name,
+        title: incoming.title,
+        monitor_enabled: incoming.monitor_enabled,
+        is_recording,
+        is_live,
+        quality: incoming.quality,
+        output_format: incoming.output_format,
+        output_dir: incoming.output_dir,
+        recording_dir,
+        schedule: incoming.schedule,
+        created_at,
+        updated_at: Utc::now(),
+        last_check_at,
+        recording_started_at,
+        error_message,
+        segment_count,
+        retry_count,
+        thumbnail,
+        scheduled_start: incoming.scheduled_start,
+        recurrence: incoming.recurrence,
+    };
+    Ok(())
+}
+
 /// 文件条目（文件浏览 API 返回）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileEntry {

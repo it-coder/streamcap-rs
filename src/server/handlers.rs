@@ -141,14 +141,17 @@ pub async fn update_recording(
     Path(id): Path<String>,
     Json(config): Json<RecordingConfig>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut found = false;
     {
         let mut recordings = state.app_state.recordings.write();
         if let Some(existing) = recordings.iter_mut().find(|r| r.id == id) {
-            *existing = RecordingConfig {
-                updated_at: Utc::now(),
-                ..config
-            };
+            found = true;
+            crate::models::merge_recording_update(existing, config)
+                .map_err(ApiError)?;
         }
+    }
+    if !found {
+        return Err(ApiError(format!("录制任务 {} 不存在", id)));
     }
 
     state

@@ -19,6 +19,7 @@ export type UseRecordingsResult = {
   toggleMonitor: (id: string, enabled: boolean) => Promise<void>;
   startRecording: (id: string) => Promise<void>;
   stopRecording: (id: string) => Promise<void>;
+  updateRecording: (config: RecordingConfig) => Promise<void>;
 };
 
 export function useRecordings() {
@@ -184,6 +185,12 @@ export function useRecordings() {
     // 状态变更由事件推送自动更新
   }, []);
 
+  const updateRecording = useCallback(async (config: RecordingConfig) => {
+    await api.updateRecording(config);
+    // update_recording 不触发状态广播，主动刷新一次以拉取合并后的最新配置
+    await refresh();
+  }, [refresh]);
+
   return {
     recordings,
     progressMap,
@@ -194,5 +201,6 @@ export function useRecordings() {
     toggleMonitor,
     startRecording,
     stopRecording,
+    updateRecording,
   };
 }

@@ -50,6 +50,7 @@ const zh: Dict = {
   "card.startRecording": "开始录制",
   "card.stopRecording": "停止录制",
   "card.delete": "删除",
+  "card.edit": "编辑",
   "card.deleteConfirmTitle": "确定删除此录制任务？",
   "card.cancel": "取消",
   "card.retryMsg": "录制失败，第 {n} 次重试中...",
@@ -101,6 +102,17 @@ const zh: Dict = {
   "add.recurrenceOnce": "仅一次",
   "add.recurrenceDaily": "每天",
   "add.recurrenceWeekly": "每周",
+
+  // 编辑任务
+  "edit.title": "编辑录制任务",
+  "edit.anchorName": "主播名",
+  "edit.anchorNamePlaceholder": "可选，留空则使用直播间默认名",
+  "edit.titleLabel": "直播标题",
+  "edit.titlePlaceholder": "可选，留空则使用直播间默认标题",
+  "edit.urlLockedHint": "录制进行中，直播间地址已锁定（与正在进行的录制绑定）",
+  "edit.save": "保存修改",
+  "edit.success": "修改已保存",
+  "edit.fail": "保存失败: {error}",
 
   // 平台名
   "platform.douyin": "抖音直播",
@@ -304,6 +316,7 @@ const en: Dict = {
   "card.startRecording": "Start Recording",
   "card.stopRecording": "Stop Recording",
   "card.delete": "Delete",
+  "card.edit": "Edit",
   "card.deleteConfirmTitle": "Delete this recording task?",
   "card.cancel": "Cancel",
   "card.retryMsg": "Recording failed, retrying ({n})...",
@@ -352,6 +365,16 @@ const en: Dict = {
   "add.recurrenceOnce": "Once",
   "add.recurrenceDaily": "Daily",
   "add.recurrenceWeekly": "Weekly",
+
+  "edit.title": "Edit Recording Task",
+  "edit.anchorName": "Anchor Name",
+  "edit.anchorNamePlaceholder": "Optional, leave blank to use stream default",
+  "edit.titleLabel": "Stream Title",
+  "edit.titlePlaceholder": "Optional, leave blank to use stream default",
+  "edit.urlLockedHint": "Recording in progress — stream URL is locked (bound to the active recording)",
+  "edit.save": "Save Changes",
+  "edit.success": "Changes saved",
+  "edit.fail": "Save failed: {error}",
 
   "platform.douyin": "Douyin",
   "platform.bilibili": "Bilibili",

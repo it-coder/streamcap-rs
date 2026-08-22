@@ -22,6 +22,7 @@ import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
 import { RecordingList } from "./pages/RecordingList";
 import { AddTask } from "./pages/AddTask";
+import { EditTask } from "./pages/EditTask";
 import { SettingsPage } from "./pages/SettingsPage";
 import { FilesPage } from "./pages/FilesPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -30,6 +31,7 @@ import { useRecordings } from "./hooks/useRecordings";
 import { useSettings } from "./hooks/useSettings";
 import { useFfmpegStatus } from "./hooks/useFfmpegStatus";
 import { api } from "./api/provider";
+import type { RecordingConfig } from "./types";
 import { LanguageProvider, useI18n, type Lang } from "./i18n";
 
 const { Sider, Content } = Layout;
@@ -40,6 +42,7 @@ type PageKey = "home" | "add" | "settings" | "files" | "history";
 function AppContent() {
   const [currentPage, setCurrentPage] = useState<PageKey>("home");
   const [version, setVersion] = useState<string>("");
+  const [editing, setEditing] = useState<RecordingConfig | null>(null);
   const recordingsHook = useRecordings();
   const settingsHook = useSettings();
   const ffmpeg = useFfmpegStatus();
@@ -135,6 +138,7 @@ function AppContent() {
             <RecordingList
               recordingsHook={recordingsHook}
               onNavigateToAdd={() => setCurrentPage("add")}
+              onEdit={(r) => setEditing(r)}
               settings={settingsHook.settings}
             />
           )}
@@ -151,6 +155,13 @@ function AppContent() {
               settings={settingsHook.settings}
               loading={settingsHook.loading}
               onSave={settingsHook.save}
+            />
+          )}
+          {editing && (
+            <EditTask
+              entry={editing}
+              onSave={recordingsHook.updateRecording}
+              onClose={() => setEditing(null)}
             />
           )}
         </Content>

@@ -7,6 +7,7 @@ import {
   VideoCameraOutlined,
   StopOutlined,
   DeleteOutlined,
+  EditOutlined,
 } from "@ant-design/icons";
 import { useEffect, useState } from "react";
 import { StatusBadge } from "./StatusBadge";
@@ -23,6 +24,7 @@ interface Props {
   onStartRecording: (id: string) => Promise<void>;
   onStopRecording: (id: string) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onEdit: (recording: RecordingConfig) => void;
 }
 
 /** 格式化时长秒为 HH:MM:SS */
@@ -50,6 +52,7 @@ export function RecordingCard({
   onStartRecording,
   onStopRecording,
   onDelete,
+  onEdit,
 }: Props) {
   const { t } = useI18n();
   const [thumbUrl, setThumbUrl] = useState<string | null>(null);
@@ -283,6 +286,12 @@ export function RecordingCard({
             {t("card.stopRecording")}
           </Button>
         )}
+
+        <Tooltip title={t("card.edit")}>
+          <Button size="small" icon={<EditOutlined />} onClick={() => onEdit(recording)}>
+            {t("card.edit")}
+          </Button>
+        </Tooltip>
 
         <Popconfirm
           title={t("card.deleteConfirmTitle")}

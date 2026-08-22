@@ -21,10 +21,11 @@ function statusKey(r: RecordingConfig): string {
 interface Props {
   recordingsHook: UseRecordingsResult;
   onNavigateToAdd: () => void;
+  onEdit: (recording: RecordingConfig) => void;
   settings?: AppSettings | null;
 }
 
-export function RecordingList({ recordingsHook, onNavigateToAdd, settings }: Props) {
+export function RecordingList({ recordingsHook, onNavigateToAdd, onEdit, settings }: Props) {
   const { t } = useI18n();
   const {
     recordings,
@@ -127,6 +128,7 @@ export function RecordingList({ recordingsHook, onNavigateToAdd, settings }: Pro
                 onStartRecording={startRecording}
                 onStopRecording={stopRecording}
                 onDelete={removeRecording}
+                onEdit={onEdit}
               />
             </Col>
           ))}
