@@ -98,8 +98,8 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --generate-notes \
             --title "Release ${{ github.ref_name }}" \
-            --draft false \
-            --prerelease false
+            --draft=false \
+            --prerelease=false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
