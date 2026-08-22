@@ -67,6 +67,6 @@ jobs:
           tagName: ${{ github.ref_name }}         # Release 的标签名
           releaseName: 'App v__VERSION__'         # Release 的标题
           releaseBody: '请下载对应平台的安装包。' # Release 的描述
-          releaseDraft: true                      # 建议先创建为草稿，检查无误后再发布
+          releaseDraft: false                      # 建议先创建为草稿，检查无误后再发布
           prerelease: false
           args: ${{ matrix.args }}
