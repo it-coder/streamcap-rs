@@ -75,7 +75,7 @@ jobs:
         with:
           name: ${{ matrix.platform }}-${{ matrix.args }}
           path: |
-            src-tauri/target/release/bundle/**/*
+            target/release/bundle/**/*
 
   # 👇 单独的 job：在所有平台构建完成后，创建带自动生成说明的 Release
   create-release:
