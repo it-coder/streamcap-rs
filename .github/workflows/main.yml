@@ -3,7 +3,7 @@ name: 'publish'
 on:
   push:
     tags:
-      - 'v*.*.*' # 当你推送一个以 'v' 开头的标签时触发，例如 v1.0.0
+      - 'v*.*.*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -12,23 +12,25 @@ concurrency:
 jobs:
   publish-tauri:
     permissions:
-      contents: write # 允许 action 创建 Release 和上传文件
+      contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: 'macos-latest'   # 为 Apple Silicon (M1/M2) 构建
+          - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
-          - platform: 'macos-latest'   # 为 Intel Mac 构建
+          - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
-          - platform: 'ubuntu-22.04'   # 为 Linux 构建
+          - platform: 'ubuntu-22.04'
             args: ''
-          - platform: 'windows-latest' # 为 Windows 构建
+          - platform: 'windows-latest'
             args: ''
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 👈 关键：拉取完整历史，否则无法正确生成变更日志
 
       - name: setup node
         uses: actions/setup-node@v4
@@ -48,7 +50,6 @@ jobs:
           workspaces: '. -> target'
           key: ${{ matrix.platform }}-${{ matrix.args }}
 
-      # Linux 环境需要安装一些系统依赖
       - name: install dependencies (ubuntu only)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -59,14 +60,53 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      # 核心步骤：使用 tauri-action 构建并发布
-      - uses: tauri-apps/tauri-action@v1
+      # 👇 先构建，但不创建 Release（只构建不上传）
+      - name: build Tauri app
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}         # Release 的标签名
-          releaseName: 'App v__VERSION__'         # Release 的标题
-          releaseBody: '请下载对应平台的安装包。' # Release 的描述
-          releaseDraft: false                      # 建议先创建为草稿，检查无误后再发布
-          prerelease: false
           args: ${{ matrix.args }}
+          releaseId: none  # 不创建 Release，只构建
+
+      # 👇 上传构建产物作为 workflow artifacts（供后续步骤使用）
+      - name: upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-${{ matrix.args }}
+          path: |
+            src-tauri/target/release/bundle/**/*
+
+  # 👇 单独的 job：在所有平台构建完成后，创建带自动生成说明的 Release
+  create-release:
+    needs: publish-tauri  # 等待所有构建完成
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 下载所有构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 创建 GitHub Release（自动生成发布说明）
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --generate-notes \
+            --title "Release ${{ github.ref_name }}" \
+            --draft false \
+            --prerelease false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 上传所有构建产物到 Release
+        run: |
+          find artifacts -type f -name "*.app" -o -name "*.deb" -o -name "*.msi" -o -name "*.dmg" | while read file; do
+            gh release upload "${{ github.ref_name }}" "$file" --clobber
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
