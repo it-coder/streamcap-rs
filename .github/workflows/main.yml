@@ -169,7 +169,7 @@ jobs:
           cat sha256sums.txt
 
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           # 产物经 bundle 目录上传后位于子目录（deb/msi/dmg 等），需递归匹配
           files: |
