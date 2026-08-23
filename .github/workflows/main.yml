@@ -85,14 +85,9 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Windows arm64 交叉时仅打 msi（nsis 不支持 arm64）
-          TAURI_BUNDLER_TARGETS: >-
-            ${{
-              matrix.platform == 'windows-latest' && endsWith(matrix.args, 'aarch64-pc-windows-msvc') && 'msi'
-              || ''
-            }}
         with:
-          args: ${{ matrix.args }}
+          # Windows arm64 交叉时追加 --bundles msi（nsis 不支持 arm64）；其余平台保持原 args
+          args: ${{ format('{0}{1}', matrix.args, (matrix.platform == 'windows-latest' && endsWith(matrix.args, 'aarch64-pc-windows-msvc') && ' --bundles msi') || '') }}
           releaseId: none  # 不创建 Release，只构建
 
       # 👇 计算 bundle 产物目录：指定 --target 交叉编译时在 target/<triple>/release/bundle，否则在 target/release/bundle
@@ -108,16 +103,32 @@ jobs:
           fi
           echo "Bundle 目录: $(grep '^dir=' "$GITHUB_OUTPUT" | cut -d= -f2)"
 
-      # 👇 生成本平台校验和（覆盖 .deb/.msi/.dmg；.app 以 .dmg 内含形式分发，不单独传）
-      - name: 生成校验和
+      # 👇 生成校验和（非 Windows：shasum 覆盖 .deb/.msi/.dmg/.exe）
+      - name: 生成校验和 (Unix)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           cd "${{ steps.bundle-path.outputs.dir }}"
-          find . -type f \( -name '*.deb' -o -name '*.msi' -o -name '*.dmg' \) -print0 \
+          find . -type f \( -name '*.deb' -o -name '*.msi' -o -name '*.dmg' -o -name '*.exe' \) -print0 \
             | xargs -0 -r shasum -a 256 \
             > "SHA256SUMS-${{ matrix.artifact }}.txt"
           echo "生成的校验和文件内容："
           cat "SHA256SUMS-${{ matrix.artifact }}.txt"
+
+      # 👇 生成校验和（Windows：Get-FileHash，LF 换行避免 Unix shasum -c 因 CRLF 失败；nsis 的 .exe 也纳入）
+      - name: 生成校验和 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bundleDir = "${{ steps.bundle-path.outputs.dir }}"
+          $lines = Get-ChildItem -Path $bundleDir -Recurse -Include *.deb,*.msi,*.dmg,*.exe | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "{0}  {1}" -f $h, $_.Name
+          }
+          # 用 LF 换行、无 BOM 写入，保证跨平台 shasum -c 兼容
+          [System.IO.File]::WriteAllText("$bundleDir/SHA256SUMS-${{ matrix.artifact }}.txt", ($lines -join "`n"))
+          Write-Host "生成的校验和文件内容："
+          Get-Content "$bundleDir/SHA256SUMS-${{ matrix.artifact }}.txt"
 
       # 👇 上传构建产物 + 校验和（artifact 命名干净，无空格/连字符歧义）
       - name: upload artifacts
