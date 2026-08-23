@@ -17,14 +17,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS（macos-latest 原生支持 darwin 双架构交叉编译）
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
+            artifact: 'macos-arm64'
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
+            artifact: 'macos-x64'
+          # Linux x64（host 构建）
           - platform: 'ubuntu-22.04'
             args: ''
+            artifact: 'linux-x64'
+          # Linux arm64（使用原生 ARM runner，避免 Tauri 交叉编译依赖地狱）
+          - platform: 'ubuntu-24.04-arm'
+            args: ''
+            artifact: 'linux-arm64'
+          # Windows x64（host 构建）
           - platform: 'windows-latest'
             args: ''
+            artifact: 'windows-x64'
+          # Windows arm64（windows-latest 交叉编译，MSVC target 不依赖系统库）
+          - platform: 'windows-latest'
+            args: '--target aarch64-pc-windows-msvc'
+            artifact: 'windows-arm64'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -42,7 +57,12 @@ jobs:
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: >-
+            ${{
+              matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin'
+              || (matrix.platform == 'windows-latest' && endsWith(matrix.args, 'aarch64-pc-windows-msvc') && 'aarch64-pc-windows-msvc')
+              || ''
+            }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -51,7 +71,7 @@ jobs:
           key: ${{ matrix.platform }}-${{ matrix.args }}
 
       - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+        if: startsWith(matrix.platform, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
@@ -65,30 +85,46 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Windows arm64 交叉时仅打 msi（nsis 不支持 arm64）
+          TAURI_BUNDLER_TARGETS: >-
+            ${{
+              matrix.platform == 'windows-latest' && endsWith(matrix.args, 'aarch64-pc-windows-msvc') && 'msi'
+              || ''
+            }}
         with:
           args: ${{ matrix.args }}
           releaseId: none  # 不创建 Release，只构建
 
-      # 👇 计算 bundle 产物路径：指定 --target 交叉编译时产物在 target/<triple>/release/bundle 下，否则在 target/release/bundle 下
+      # 👇 计算 bundle 产物目录：指定 --target 交叉编译时在 target/<triple>/release/bundle，否则在 target/release/bundle
       - name: Bundle path
         id: bundle-path
         shell: bash
         run: |
           if [ -n "${{ matrix.args }}" ]; then
-            # 从 args（如 "--target aarch64-apple-darwin"）中提取 triple
             TRIPLE=$(printf '%s' "${{ matrix.args }}" | sed 's/--target //')
-            printf 'path=target/%s/release/bundle/**/*\n' "$TRIPLE" >> "$GITHUB_OUTPUT"
+            printf 'dir=target/%s/release/bundle\n' "$TRIPLE" >> "$GITHUB_OUTPUT"
           else
-            printf 'path=target/release/bundle/**/*\n' >> "$GITHUB_OUTPUT"
+            printf 'dir=target/release/bundle\n' >> "$GITHUB_OUTPUT"
           fi
-          echo "解析出的产物路径: $(cat "$GITHUB_OUTPUT" | grep '^path=' | cut -d= -f2)"
+          echo "Bundle 目录: $(grep '^dir=' "$GITHUB_OUTPUT" | cut -d= -f2)"
 
-      # 👇 上传构建产物作为 workflow artifacts（供后续步骤使用）
+      # 👇 生成本平台校验和（覆盖 .deb/.msi/.dmg；.app 以 .dmg 内含形式分发，不单独传）
+      - name: 生成校验和
+        shell: bash
+        run: |
+          cd "${{ steps.bundle-path.outputs.dir }}"
+          find . -type f \( -name '*.deb' -o -name '*.msi' -o -name '*.dmg' \) -print0 \
+            | xargs -0 -r shasum -a 256 \
+            > "SHA256SUMS-${{ matrix.artifact }}.txt"
+          echo "生成的校验和文件内容："
+          cat "SHA256SUMS-${{ matrix.artifact }}.txt"
+
+      # 👇 上传构建产物 + 校验和（artifact 命名干净，无空格/连字符歧义）
       - name: upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.platform }}-${{ matrix.args }}
-          path: ${{ steps.bundle-path.outputs.path }}
+          name: desktop-${{ matrix.artifact }}
+          path: ${{ steps.bundle-path.outputs.dir }}
           if-no-files-found: error  # 找不到产物直接失败，避免静默漏传
 
   # 👇 单独的 job：在所有平台构建完成后，创建带自动生成说明的 Release
@@ -98,7 +134,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -108,6 +144,19 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: 汇总全部校验和
+        shell: bash
+        run: |
+          # 收集各平台校验和文件，合并为单一 sha256sums.txt（相对路径统一为文件名，便于用户本地校验）
+          : > sha256sums.txt
+          find artifacts -name 'SHA256SUMS-*.txt' -print0 | sort -z | while IFS= read -r -d '' f; do
+            echo "# === ${f#artifacts/} ===" >> sha256sums.txt
+            # 去掉前缀 ./ 与目录层级，仅保留产物文件名，方便用户 cd 到下载目录后直接 shasum -c
+            sed 's#^\(\w*\)  \./#\1  #' "$f" >> sha256sums.txt
+          done
+          echo "最终 sha256sums.txt："
+          cat sha256sums.txt
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
@@ -115,5 +164,6 @@ jobs:
             artifacts/*.deb
             artifacts/*.msi
             artifacts/*.dmg
+            sha256sums.txt
           generate_release_notes: true
           fail_on_unmatched_files: true
