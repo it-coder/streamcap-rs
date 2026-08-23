@@ -17,14 +17,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # macOS（macos-latest 原生支持 darwin 双架构交叉编译）
           - platform: 'macos-latest'
             args: '--target aarch64-apple-darwin'
+            artifact: 'macos-arm64'
           - platform: 'macos-latest'
             args: '--target x86_64-apple-darwin'
+            artifact: 'macos-x64'
+          # Linux x64（host 构建）
           - platform: 'ubuntu-22.04'
             args: ''
+            artifact: 'linux-x64'
+          # Linux arm64（使用原生 ARM runner，避免 Tauri 交叉编译依赖地狱）
+          - platform: 'ubuntu-24.04-arm'
+            args: ''
+            artifact: 'linux-arm64'
+          # Windows x64（host 构建）
           - platform: 'windows-latest'
             args: ''
+            artifact: 'windows-x64'
+          # Windows arm64（windows-latest 交叉编译，MSVC target 不依赖系统库）
+          - platform: 'windows-latest'
+            args: '--target aarch64-pc-windows-msvc'
+            artifact: 'windows-arm64'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -42,7 +57,12 @@ jobs:
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: >-
+            ${{
+              matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin'
+              || (matrix.platform == 'windows-latest' && endsWith(matrix.args, 'aarch64-pc-windows-msvc') && 'aarch64-pc-windows-msvc')
+              || ''
+            }}
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
@@ -51,7 +71,7 @@ jobs:
           key: ${{ matrix.platform }}-${{ matrix.args }}
 
       - name: install dependencies (ubuntu only)
-        if: matrix.platform == 'ubuntu-22.04'
+        if: startsWith(matrix.platform, 'ubuntu')
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
@@ -66,16 +86,57 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          args: ${{ matrix.args }}
+          # Windows arm64 交叉时追加 --bundles msi（nsis 不支持 arm64）；其余平台保持原 args
+          args: ${{ format('{0}{1}', matrix.args, (matrix.platform == 'windows-latest' && endsWith(matrix.args, 'aarch64-pc-windows-msvc') && ' --bundles msi') || '') }}
           releaseId: none  # 不创建 Release，只构建
 
-      # 👇 上传构建产物作为 workflow artifacts（供后续步骤使用）
+      # 👇 计算 bundle 产物目录：指定 --target 交叉编译时在 target/<triple>/release/bundle，否则在 target/release/bundle
+      - name: Bundle path
+        id: bundle-path
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.args }}" ]; then
+            TRIPLE=$(printf '%s' "${{ matrix.args }}" | sed 's/--target //')
+            printf 'dir=target/%s/release/bundle\n' "$TRIPLE" >> "$GITHUB_OUTPUT"
+          else
+            printf 'dir=target/release/bundle\n' >> "$GITHUB_OUTPUT"
+          fi
+          echo "Bundle 目录: $(grep '^dir=' "$GITHUB_OUTPUT" | cut -d= -f2)"
+
+      # 👇 生成校验和（非 Windows：shasum 覆盖 .deb/.msi/.dmg/.exe）
+      - name: 生成校验和 (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cd "${{ steps.bundle-path.outputs.dir }}"
+          find . -type f \( -name '*.deb' -o -name '*.msi' -o -name '*.dmg' -o -name '*.exe' \) -print0 \
+            | xargs -0 -r shasum -a 256 \
+            > "SHA256SUMS-${{ matrix.artifact }}.txt"
+          echo "生成的校验和文件内容："
+          cat "SHA256SUMS-${{ matrix.artifact }}.txt"
+
+      # 👇 生成校验和（Windows：Get-FileHash，LF 换行避免 Unix shasum -c 因 CRLF 失败；nsis 的 .exe 也纳入）
+      - name: 生成校验和 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bundleDir = "${{ steps.bundle-path.outputs.dir }}"
+          $lines = Get-ChildItem -Path $bundleDir -Recurse -Include *.deb,*.msi,*.dmg,*.exe | ForEach-Object {
+            $h = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "{0}  {1}" -f $h, $_.Name
+          }
+          # 用 LF 换行、无 BOM 写入，保证跨平台 shasum -c 兼容
+          [System.IO.File]::WriteAllText("$bundleDir/SHA256SUMS-${{ matrix.artifact }}.txt", ($lines -join "`n"))
+          Write-Host "生成的校验和文件内容："
+          Get-Content "$bundleDir/SHA256SUMS-${{ matrix.artifact }}.txt"
+
+      # 👇 上传构建产物 + 校验和（artifact 命名干净，无空格/连字符歧义）
       - name: upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.platform }}-${{ matrix.args }}
-          path: |
-            src-tauri/target/release/bundle/**/*
+          name: desktop-${{ matrix.artifact }}
+          path: ${{ steps.bundle-path.outputs.dir }}
+          if-no-files-found: error  # 找不到产物直接失败，避免静默漏传
 
   # 👇 单独的 job：在所有平台构建完成后，创建带自动生成说明的 Release
   create-release:
@@ -92,21 +153,29 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
-      - name: 创建 GitHub Release（自动生成发布说明）
+      - name: 汇总全部校验和
+        shell: bash
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --generate-notes \
-            --title "Release ${{ github.ref_name }}" \
-            --draft=false \
-            --prerelease=false
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 上传所有构建产物到 Release
-        run: |
-          find artifacts -type f -name "*.app" -o -name "*.deb" -o -name "*.msi" -o -name "*.dmg" | while read file; do
-            gh release upload "${{ github.ref_name }}" "$file" --clobber
+          # 收集各平台校验和文件，合并为单一 sha256sums.txt（相对路径统一为文件名，便于用户本地校验）
+          : > sha256sums.txt
+          find artifacts -name 'SHA256SUMS-*.txt' -print0 | sort -z | while IFS= read -r -d '' f; do
+            echo "# === ${f#artifacts/} ===" >> sha256sums.txt
+            # 去掉前缀 ./ 与目录层级，仅保留产物文件名，方便用户 cd 到下载目录后直接 shasum -c
+            sed 's#^\(\w*\)  \./#\1  #' "$f" >> sha256sums.txt
           done
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "最终 sha256sums.txt："
+          cat sha256sums.txt
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v3
+        with:
+          # 产物经 bundle 目录上传后位于子目录（deb/msi/dmg 等），需递归匹配
+          files: |
+            artifacts/**/*.deb
+            artifacts/**/*.msi
+            artifacts/**/*.dmg
+            sha256sums.txt
+          generate_release_notes: true
+          fail_on_unmatched_files: true
