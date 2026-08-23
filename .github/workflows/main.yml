@@ -171,10 +171,11 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
+          # 产物经 bundle 目录上传后位于子目录（deb/msi/dmg 等），需递归匹配
           files: |
-            artifacts/*.deb
-            artifacts/*.msi
-            artifacts/*.dmg
+            artifacts/**/*.deb
+            artifacts/**/*.msi
+            artifacts/**/*.dmg
             sha256sums.txt
           generate_release_notes: true
           fail_on_unmatched_files: true
